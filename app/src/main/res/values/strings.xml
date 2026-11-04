@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Vicsmusic</string>
+    <string name="welcome_title">Bienvenido a Vicsmusic</string>
+    <string name="welcome_subtitle">Música limpia, moderna y sin publicidad</string>
+    <string name="phase_0_badge">Fase 0: Cimientos Listos</string>
+    <string name="nav_home">Inicio</string>
+    <string name="nav_search">Buscar</string>
+    <string name="nav_library">Biblioteca</string>
+    <string name="nav_settings">Ajustes</string>
+</resources>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sombra de profundidad proyectada -->
+    <path
+        android:fillColor="#3D000000"
+        android:pathData="M26,34 L38,34 L54,74 L70,34 L82,34 L58,82 C56,84 52,84 50,82 Z" />
+
+    <!-- Ala Izquierda del monograma "V" (Índigo Profundo a Índigo Eléctrico) -->
+    <path
+        android:pathData="M26,32 L39,32 L54,72 L43,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="26"
+                android:startY="32"
+                android:endX="54"
+                android:endY="72"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#4338CA" />
+                <item android:offset="0.5" android:color="#4F46E5" />
+                <item android:offset="1.0" android:color="#6366F1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Ala Derecha del monograma "V" (Índigo a Violeta Iris Satinado) -->
+    <path
+        android:pathData="M69,32 L82,32 L65,72 L54,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="72"
+                android:endX="82"
+                android:endY="32"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#6366F1" />
+                <item android:offset="0.6" android:color="#8B5CF6" />
+                <item android:offset="1.0" android:color="#A855F7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Base / Vértice inferior aerodinámico -->
+    <path
+        android:pathData="M43,72 L54,80 C54.6,80.5 55.4,80.5 56,80 L65,72 L54,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="43"
+                android:startY="72"
+                android:endX="65"
+                android:endY="80"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#4F46E5" />
+                <item android:offset="1.0" android:color="#8B5CF6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Glifo Play Central Flotante (Gradiente Cristal Zafiro a Lavanda) -->
+    <path
+        android:pathData="M47,42 C47,40.5 48.6,39.6 49.9,40.4 L62.5,47.9 C63.7,48.6 63.7,50.4 62.5,51.1 L49.9,58.6 C48.6,59.4 47,58.5 47,57.0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="47"
+                android:startY="40"
+                android:endX="63"
+                android:endY="59"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#38BDF8" />
+                <item android:offset="0.5" android:color="#818CF8" />
+                <item android:offset="1.0" android:color="#C084FC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Destello Specular Superior Sutil -->
+    <path
+        android:pathData="M27,33 L38,33 L37,35 L28,35 Z"
+        android:fillColor="#55FFFFFF" />
+    <path
+        android:pathData="M70,33 L81,33 L80,35 L71,35 Z"
+        android:fillColor="#55FFFFFF" />
+</vector>

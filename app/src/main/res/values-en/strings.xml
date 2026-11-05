@@ -3,6 +3,13 @@
     <string name="welcome_title">Welcome to Vicsmusic</string>
     <string name="welcome_subtitle">Clean, modern and ad-free music</string>
     <string name="phase_0_badge">Phase 0: Foundation Ready</string>
+    <string name="phase_1_badge">Phase 1: Domain and Data</string>
+    <string name="local_tracks_title">Local Tracks</string>
+    <string name="sync_local_tracks">Scan Local Music</string>
+    <string name="scanning_local_tracks">Scanning storage...</string>
+    <string name="permission_audio_rationale">Vicsmusic needs access to audio files to browse and play your local music.</string>
+    <string name="grant_permission">Grant Audio Permission</string>
+    <string name="no_local_tracks">No audio tracks found on this device</string>
     <string name="nav_home">Home</string>
     <string name="nav_search">Search</string>
     <string name="nav_library">Library</string>

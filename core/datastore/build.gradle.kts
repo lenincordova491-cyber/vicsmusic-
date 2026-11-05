@@ -23,7 +23,13 @@ android {
 }
 
 dependencies {
-    implementation(libs.androidx.datastore.preferences)
+    implementation(project(":core:model"))
+    api(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
 }

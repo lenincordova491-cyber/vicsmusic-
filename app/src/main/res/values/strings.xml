@@ -4,6 +4,14 @@
     <string name="welcome_subtitle">Música limpia, moderna y sin publicidad</string>
     <string name="phase_0_badge">Fase 0: Cimientos Listos</string>
     <string name="phase_1_badge">Fase 1: Dominio y Datos</string>
+    <string name="phase_2_badge">Fase 2: Reproductor Activo</string>
+    <string name="now_playing">Reproduciendo ahora</string>
+    <string name="shuffle">Aleatorio</string>
+    <string name="repeat">Repetición</string>
+    <string name="play">Reproducir</string>
+    <string name="pause">Pausa</string>
+    <string name="next">Siguiente</string>
+    <string name="previous">Anterior</string>
     <string name="local_tracks_title">Canciones locales</string>
     <string name="sync_local_tracks">Escanear música local</string>
     <string name="scanning_local_tracks">Escaneando almacenamiento...</string>

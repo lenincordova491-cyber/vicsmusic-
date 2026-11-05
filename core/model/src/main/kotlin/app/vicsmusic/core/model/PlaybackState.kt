@@ -27,4 +27,6 @@ data class PlaybackState(
     val isShuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val errorMessage: String? = null
-)
+) {
+    val isPlaying: Boolean get() = status == PlaybackStatus.PLAYING
+}

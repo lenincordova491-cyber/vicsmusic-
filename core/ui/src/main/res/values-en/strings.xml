@@ -1,0 +1,59 @@
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Player Controls -->
+    <string name="now_playing">Now Playing</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="repeat_off">Repeat Off</string>
+    <string name="repeat_one">Repeat One</string>
+    <string name="repeat_all">Repeat All</string>
+    <string name="queue">Playback Queue</string>
+
+    <!-- Home -->
+    <string name="home_greeting">Hello</string>
+    <string name="home_recent">Recently Played</string>
+    <string name="home_local_music">Your Local Music</string>
+    <string name="home_empty_title">Your library is empty</string>
+    <string name="home_empty_description">Scan your device to start listening to local tracks right away.</string>
+    <string name="home_scan_button">Scan device</string>
+
+    <!-- Search -->
+    <string name="search_placeholder">Tracks, artists, albums...</string>
+    <string name="search_recent_searches">Recent searches</string>
+    <string name="search_filter_all">All</string>
+    <string name="search_filter_tracks">Tracks</string>
+    <string name="search_filter_artists">Artists</string>
+    <string name="search_filter_albums">Albums</string>
+    <string name="search_no_results">No results</string>
+    <string name="search_no_results_desc">Try searching for something else.</string>
+    <string name="search_initial_prompt">Find your favorite music</string>
+    <string name="search_initial_prompt_desc">Type a title or artist to search local audio.</string>
+
+    <!-- Library -->
+    <string name="library_title">Library</string>
+    <string name="library_tab_tracks">Tracks</string>
+    <string name="library_tab_favorites">Favorites</string>
+    <string name="library_tab_playlists">Playlists</string>
+    <string name="library_tab_artists">Artists</string>
+    <string name="library_tab_albums">Albums</string>
+    <string name="library_empty_favorites">No favorite tracks yet</string>
+    <string name="library_empty_playlists">No playlists found</string>
+    <string name="library_scan_tracks">Scan music</string>
+    <string name="library_track_count">%1$d tracks</string>
+
+    <!-- Common -->
+    <string name="retry">Retry</string>
+    <string name="unknown_artist">Unknown artist</string>
+    <string name="unknown_title">Untitled</string>
+    <string name="empty_content">No content available</string>
+    <string name="error_generic">An unexpected error occurred</string>
+</resources>

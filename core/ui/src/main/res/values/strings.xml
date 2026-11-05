@@ -1,0 +1,59 @@
+<resources>
+    <!-- Navigation -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_search">Buscar</string>
+    <string name="nav_library">Biblioteca</string>
+    <string name="nav_settings">Ajustes</string>
+
+    <!-- Player Controls -->
+    <string name="now_playing">Reproduciendo</string>
+    <string name="play">Reproducir</string>
+    <string name="pause">Pausar</string>
+    <string name="next">Siguiente</string>
+    <string name="previous">Anterior</string>
+    <string name="shuffle">Aleatorio</string>
+    <string name="repeat">Repetición</string>
+    <string name="repeat_off">Sin repetición</string>
+    <string name="repeat_one">Repetir una</string>
+    <string name="repeat_all">Repetir todas</string>
+    <string name="queue">Cola de reproducción</string>
+
+    <!-- Home -->
+    <string name="home_greeting">Hola</string>
+    <string name="home_recent">Escuchado recientemente</string>
+    <string name="home_local_music">Tu música local</string>
+    <string name="home_empty_title">Tu biblioteca está vacía</string>
+    <string name="home_empty_description">Escanea tus pistas locales para comenzar a escuchar música de inmediato.</string>
+    <string name="home_scan_button">Escanear dispositivo</string>
+
+    <!-- Search -->
+    <string name="search_placeholder">Canciones, artistas, álbumes...</string>
+    <string name="search_recent_searches">Búsquedas recientes</string>
+    <string name="search_filter_all">Todo</string>
+    <string name="search_filter_tracks">Canciones</string>
+    <string name="search_filter_artists">Artistas</string>
+    <string name="search_filter_albums">Álbumes</string>
+    <string name="search_no_results">Sin resultados</string>
+    <string name="search_no_results_desc">Prueba a buscar con otro término o palabra clave.</string>
+    <string name="search_initial_prompt">Encuentra tus canciones favoritas</string>
+    <string name="search_initial_prompt_desc">Escribe el título de una canción o artista para buscar en tu música local.</string>
+
+    <!-- Library -->
+    <string name="library_title">Biblioteca</string>
+    <string name="library_tab_tracks">Canciones</string>
+    <string name="library_tab_favorites">Favoritos</string>
+    <string name="library_tab_playlists">Playlists</string>
+    <string name="library_tab_artists">Artistas</string>
+    <string name="library_tab_albums">Álbumes</string>
+    <string name="library_empty_favorites">No tienes canciones favoritas aún</string>
+    <string name="library_empty_playlists">No hay listas creadas</string>
+    <string name="library_scan_tracks">Escanear música</string>
+    <string name="library_track_count">%1$d canciones</string>
+
+    <!-- Common -->
+    <string name="retry">Reintentar</string>
+    <string name="unknown_artist">Artista desconocido</string>
+    <string name="unknown_title">Sin título</string>
+    <string name="empty_content">No hay contenido disponible</string>
+    <string name="error_generic">Ocurrió un error inesperado</string>
+</resources>

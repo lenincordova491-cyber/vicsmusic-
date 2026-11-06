@@ -21,6 +21,9 @@ data class InnerTubeClientProfile(
 
 object InnerTubeClients {
 
+    // Verification timestamp for current client versions and headers: 2026-11-05
+    // TODO: Periodically verify versions against latest yt-dlp upstream table
+
     /** YouTube Music web client: richest catalog metadata for search/browse. */
     val WEB_REMIX = InnerTubeClientProfile(
         clientName = "WEB_REMIX",
@@ -33,14 +36,30 @@ object InnerTubeClients {
     )
 
     /**
-     * Android VR client: its /player responses expose direct (non-ciphered)
-     * adaptive audio URLs, so no signature handling is required.
+     * VisionOS client: top priority for direct adaptive streams without SABR/cipher.
+     * Verified: 2026-11-05
+     */
+    val VISIONOS = InnerTubeClientProfile(
+        clientName = "VISIONOS",
+        clientVersion = "1.02",
+        clientId = 101,
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        baseUrl = "https://www.youtube.com/youtubei/v1",
+        deviceMake = "Apple",
+        deviceModel = "Vision Pro",
+        osName = "visionOS",
+        osVersion = "1.0.2"
+    )
+
+    /**
+     * Android VR client: exposes direct non-ciphered adaptive audio URLs.
+     * Verified: 2026-11-05
      */
     val ANDROID_VR = InnerTubeClientProfile(
         clientName = "ANDROID_VR",
-        clientVersion = "1.61.48",
+        clientVersion = "1.65.10",
         clientId = 28,
-        userAgent = "com.google.android.apps.youtube.vr.oculus/1.61.48 " +
+        userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
             "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
         baseUrl = "https://www.youtube.com/youtubei/v1",
         deviceMake = "Oculus",
@@ -50,21 +69,63 @@ object InnerTubeClients {
         androidSdkVersion = 32
     )
 
-    /** iOS client: fallback that also returns direct adaptive audio URLs. */
+    /**
+     * iOS client: fallback returning direct adaptive audio URLs.
+     * Verified: 2026-11-05
+     */
     val IOS = InnerTubeClientProfile(
         clientName = "IOS",
-        clientVersion = "19.45.4",
+        clientVersion = "21.26.4",
         clientId = 5,
-        userAgent = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)",
+        userAgent = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)",
         baseUrl = "https://www.youtube.com/youtubei/v1",
         deviceMake = "Apple",
         deviceModel = "iPhone16,2",
         osName = "iPhone",
-        osVersion = "18.1.0.22B83"
+        osVersion = "18.1.0"
     )
 
-    /** Ordered fallback chain used to resolve playable audio streams. */
-    val STREAM_CLIENTS: List<InnerTubeClientProfile> = listOf(ANDROID_VR, IOS)
+    /**
+     * Android client: standard mobile client fallback.
+     * Verified: 2026-11-05
+     */
+    val ANDROID = InnerTubeClientProfile(
+        clientName = "ANDROID",
+        clientVersion = "21.26.364",
+        clientId = 3,
+        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 14; Pixel 8 Pro Build/UD1A.231105.004) gzip",
+        baseUrl = "https://www.youtube.com/youtubei/v1",
+        deviceMake = "Google",
+        deviceModel = "Pixel 8 Pro",
+        osName = "Android",
+        osVersion = "14",
+        androidSdkVersion = 34
+    )
+
+    /**
+     * TVHTML5 client: smart TV web runtime fallback.
+     * Verified: 2026-11-05
+     */
+    val TVHTML5 = InnerTubeClientProfile(
+        clientName = "TVHTML5",
+        clientVersion = "7.20260707.07.00",
+        clientId = 7,
+        userAgent = "Mozilla/5.0 (ChromiumStylePlatform; Linux x86_64; smart-tv) AppleWebKit/537.36 (KHTML, like Gecko) Cobalt/24.lts.4-gold Safari/537.36",
+        baseUrl = "https://www.youtube.com/youtubei/v1",
+        origin = "https://www.youtube.com"
+    )
+
+    /**
+     * Ordered fallback chain used to resolve playable audio streams per Phase 4.2 brief.
+     * Priority order: VISIONOS -> ANDROID_VR -> IOS -> ANDROID -> TVHTML5
+     */
+    val STREAM_CLIENTS: List<InnerTubeClientProfile> = listOf(
+        VISIONOS,
+        ANDROID_VR,
+        IOS,
+        ANDROID,
+        TVHTML5
+    )
 
     /** `params` value of the YouTube Music search "Songs" filter chip. */
     const val SEARCH_FILTER_SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="

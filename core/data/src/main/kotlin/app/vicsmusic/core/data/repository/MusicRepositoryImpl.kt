@@ -279,6 +279,12 @@ class MusicRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            trackDao.upsertTracks(tracks.map { it.asEntity() })
+        }
+    }
+
     private fun resolveSourceId(trackId: String): String {
         return when {
             trackId.startsWith("local_") -> LocalMusicSource.SOURCE_ID

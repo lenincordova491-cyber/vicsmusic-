@@ -39,7 +39,11 @@ class YouTubeMusicSource(
             null
         }
         val json = client.search(query = query, params = params, continuation = null)
-        val parsed = InnerTubeParser.parseSearch(json)
+        var parsed = InnerTubeParser.parseSearch(json)
+        if (parsed.tracks.isEmpty() && params != null) {
+            val fallbackJson = client.search(query = query, params = null, continuation = null)
+            parsed = InnerTubeParser.parseSearch(fallbackJson)
+        }
         Page(
             items = parsed.tracks.map { it.toDomainTrack() },
             page = page,

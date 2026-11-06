@@ -31,6 +31,9 @@ class InnerTubeClient(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    @Volatile
+    private var currentVisitorId: String = DEFAULT_VISITOR_ID
+
     suspend fun search(
         query: String,
         params: String?,
@@ -72,6 +75,7 @@ class InnerTubeClient(
                 header(HttpHeaders.UserAgent, profile.userAgent)
                 header(HEADER_CLIENT_NAME, profile.clientId.toString())
                 header(HEADER_CLIENT_VERSION, profile.clientVersion)
+                header(HEADER_VISITOR_ID, currentVisitorId)
                 profile.origin?.let {
                     header(HttpHeaders.Origin, it)
                     header(HttpHeaders.Referrer, "$it/")
@@ -85,8 +89,13 @@ class InnerTubeClient(
         if (!response.status.isSuccess()) {
             throw InnerTubeException("InnerTube ${profile.clientName} responded HTTP ${response.status.value}")
         }
-        return runCatching { json.parseToJsonElement(response.bodyAsText()).jsonObject }
-            .getOrElse { throw InnerTubeException("Malformed InnerTube response", it) }
+        return runCatching {
+            val root = json.parseToJsonElement(response.bodyAsText()).jsonObject
+            root.str("responseContext", "visitorData")?.let { visitor ->
+                if (visitor.isNotBlank()) currentVisitorId = visitor
+            }
+            root
+        }.getOrElse { throw InnerTubeException("Malformed InnerTube response", it) }
     }
 
     private fun buildContext(profile: InnerTubeClientProfile): JsonObject {
@@ -109,6 +118,8 @@ class InnerTubeClient(
     private companion object {
         const val HEADER_CLIENT_NAME = "X-YouTube-Client-Name"
         const val HEADER_CLIENT_VERSION = "X-YouTube-Client-Version"
+        const val HEADER_VISITOR_ID = "X-Goog-Visitor-Id"
+        const val DEFAULT_VISITOR_ID = "CgtwZXN3TUdWVFoycyjm8bjXBjIKCgJQRRIEGgAgEg%3D%3D"
         const val DEFAULT_LANGUAGE = "es"
         const val DEFAULT_COUNTRY = "US"
     }

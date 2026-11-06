@@ -37,18 +37,19 @@ object InnerTubeClients {
 
     /**
      * VisionOS client: top priority for direct adaptive streams without SABR/cipher.
-     * Verified: 2026-11-05
+     * Verified with X-Goog-Visitor-Id: 2026-11-06
      */
     val VISIONOS = InnerTubeClientProfile(
         clientName = "VISIONOS",
         clientVersion = "1.02",
         clientId = 101,
-        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
         baseUrl = "https://www.youtube.com/youtubei/v1",
+        origin = "https://www.youtube.com",
         deviceMake = "Apple",
-        deviceModel = "Vision Pro",
+        deviceModel = "RealityDevice17,1",
         osName = "visionOS",
-        osVersion = "1.0.2"
+        osVersion = "26.5.23O471"
     )
 
     /**

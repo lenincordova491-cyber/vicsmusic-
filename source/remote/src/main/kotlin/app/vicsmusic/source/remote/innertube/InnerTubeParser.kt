@@ -66,26 +66,50 @@ object InnerTubeParser {
     // ---------------------------------------------------------------- search
 
     fun parseSearch(root: JsonObject): SearchPageResult {
-        val shelf = root.obj("continuationContents", "musicShelfContinuation")
-            ?: findSearchShelf(root)
-            ?: return SearchPageResult(emptyList(), null)
+        val continuationShelf = root.obj("continuationContents", "musicShelfContinuation")
+        if (continuationShelf != null) {
+            val tracks = continuationShelf.arr("contents").orEmpty()
+                .mapNotNull { parseListItem(it.obj("musicResponsiveListItemRenderer")) }
+            val continuation = continuationShelf.arr("continuations")?.firstOrNull()
+                .str("nextContinuationData", "continuation")
+            return SearchPageResult(tracks, continuation)
+        }
 
-        val tracks = shelf.arr("contents").orEmpty()
-            .mapNotNull { parseListItem(it.obj("musicResponsiveListItemRenderer")) }
-
-        val continuation = shelf.arr("continuations")?.firstOrNull()
-            .str("nextContinuationData", "continuation")
-
-        return SearchPageResult(tracks, continuation)
-    }
-
-    private fun findSearchShelf(root: JsonObject): JsonObject? {
         val tabs = root.arr("contents", "tabbedSearchResultsRenderer", "tabs").orEmpty()
         val sections = tabs.firstOrNull()
             .arr("tabRenderer", "content", "sectionListRenderer", "contents")
             ?: root.arr("contents", "sectionListRenderer", "contents")
-            ?: return null
-        return sections.firstNotNullOfOrNull { it.obj("musicShelfRenderer") }
+            .orEmpty()
+
+        val tracks = mutableListOf<RemoteTrack>()
+        var continuation: String? = null
+
+        for (section in sections) {
+            val shelf = section.obj("musicShelfRenderer")
+            if (shelf != null) {
+                shelf.arr("contents").orEmpty().forEach { item ->
+                    parseListItem(item.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+                }
+                if (continuation == null) {
+                    continuation = shelf.arr("continuations")?.firstOrNull()
+                        .str("nextContinuationData", "continuation")
+                }
+            }
+            val itemSection = section.obj("itemSectionRenderer")
+            if (itemSection != null) {
+                itemSection.arr("contents").orEmpty().forEach { item ->
+                    parseListItem(item.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+                }
+            }
+            val cardShelf = section.obj("musicCardShelfRenderer")
+            if (cardShelf != null) {
+                cardShelf.arr("contents").orEmpty().forEach { item ->
+                    parseListItem(item.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+                }
+            }
+        }
+
+        return SearchPageResult(tracks.distinctBy { it.videoId }, continuation)
     }
 
     internal fun parseListItem(item: JsonObject?): RemoteTrack? {

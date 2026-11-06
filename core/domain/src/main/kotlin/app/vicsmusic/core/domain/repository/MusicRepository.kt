@@ -22,4 +22,5 @@ interface MusicRepository {
     suspend fun deleteDownloadedTrack(trackId: String): Result<Unit>
     suspend fun recordPlayHistory(trackId: String, completionPercentage: Float)
     suspend fun getAvailableExtensions(): Result<List<app.vicsmusic.core.model.ExtensionItem>>
+    suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit>
 }

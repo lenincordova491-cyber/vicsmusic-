@@ -52,14 +52,30 @@ class HomeViewModel @Inject constructor(
     private val recommendationEngine: AdaptiveRecommendationEngine = AdaptiveRecommendationEngine()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(
+        HomeUiState(
+            isLoading = false,
+            quickAccessTracks = STARTER_TRACKS.take(6),
+            featuredRelease = STARTER_TRACKS.first(),
+            dailyMix = STARTER_TRACKS.drop(1).take(5),
+            recommendedTracks = STARTER_TRACKS.takeLast(4),
+            trendingTracks = STARTER_TRACKS
+        )
+    )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
         updateGreeting()
         loadExtensions()
+        seedStarterTracks()
         observeData()
         fetchOnlineCatalog()
+    }
+
+    private fun seedStarterTracks() {
+        viewModelScope.launch {
+            musicRepository.seedCatalogTracks(STARTER_TRACKS)
+        }
     }
 
     private fun updateGreeting() {
@@ -88,16 +104,18 @@ class HomeViewModel @Inject constructor(
                 musicRepository.getPlayHistory(50),
                 userPreferencesRepository.userPreferences
             ) { allTracks, downloaded, recents, history, prefs ->
+                val effectiveTracks = allTracks.ifEmpty { STARTER_TRACKS }
+
                 val recommendations = recommendationEngine.computeRecommendations(
-                    allAvailableTracks = allTracks,
+                    allAvailableTracks = effectiveTracks,
                     listeningHistory = history
                 )
 
                 // 6 tracks for Spotify 2x3 quick access grid
-                val quickAccess = (recents.take(6).ifEmpty { allTracks.take(6) })
+                val quickAccess = recents.take(6).ifEmpty { effectiveTracks.take(6) }
 
                 // Hero featured banner (first recommendation or top track)
-                val hero = recommendations.dailyMix.firstOrNull() ?: allTracks.firstOrNull()
+                val hero = recommendations.dailyMix.firstOrNull() ?: effectiveTracks.firstOrNull()
 
                 val activeSources = if (prefs.activeSourceIds.isNotEmpty()) {
                     prefs.activeSourceIds
@@ -105,12 +123,19 @@ class HomeViewModel @Inject constructor(
                     setOf("ytmusic-spotiflac", "spotify-web", "soundcloud")
                 }
 
+                val currentTrending = if (_uiState.value.trendingTracks.isNotEmpty()) {
+                    _uiState.value.trendingTracks
+                } else {
+                    STARTER_TRACKS
+                }
+
                 _uiState.value.copy(
                     isLoading = false,
                     quickAccessTracks = quickAccess,
                     featuredRelease = hero,
-                    dailyMix = recommendations.dailyMix,
-                    recommendedTracks = recommendations.recommendedForYou,
+                    dailyMix = recommendations.dailyMix.ifEmpty { effectiveTracks.drop(1).take(5) },
+                    recommendedTracks = recommendations.recommendedForYou.ifEmpty { effectiveTracks.takeLast(4) },
+                    trendingTracks = currentTrending,
                     downloadedTracks = downloaded,
                     activeExtensionIds = activeSources
                 )
@@ -129,7 +154,6 @@ class HomeViewModel @Inject constructor(
 
     private fun fetchOnlineCatalog() {
         viewModelScope.launch {
-            // Fetch online trending songs if database is fresh
             val trending = musicRepository.searchTracks("Top Global").getOrNull()
                 ?: musicRepository.searchTracks("Hits").getOrDefault(emptyList())
             if (trending.isNotEmpty()) {
@@ -192,5 +216,120 @@ class HomeViewModel @Inject constructor(
             musicRepository.syncLocalTracks()
             _uiState.update { it.copy(isLoading = false) }
         }
+    }
+
+    companion object {
+        val STARTER_TRACKS = listOf(
+            Track(
+                id = "yt_kJQP7kiw5Fk",
+                sourceId = "ytmusic",
+                title = "Music!",
+                artistId = "dargz",
+                artistName = "DARGZ",
+                albumId = "friends_and_family",
+                albumName = "Friends & Family",
+                durationMs = 281000L,
+                artworkUrl = "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_kPa7bsKwL-8",
+                sourceId = "ytmusic",
+                title = "Die With A Smile",
+                artistId = "bruno_mars",
+                artistName = "Lady Gaga & Bruno Mars",
+                albumId = "die_with_a_smile",
+                albumName = "Die With A Smile",
+                durationMs = 251000L,
+                artworkUrl = "https://i.ytimg.com/vi/kPa7bsKwL-8/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_fJ9rUzIMcZQ",
+                sourceId = "ytmusic",
+                title = "Bohemian Rhapsody",
+                artistId = "queen",
+                artistName = "Queen",
+                albumId = "a_night_at_the_opera",
+                albumName = "A Night at the Opera",
+                durationMs = 354000L,
+                artworkUrl = "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_4NRXx6U8ABQ",
+                sourceId = "ytmusic",
+                title = "Blinding Lights",
+                artistId = "the_weeknd",
+                artistName = "The Weeknd",
+                albumId = "after_hours",
+                albumName = "After Hours",
+                durationMs = 200000L,
+                artworkUrl = "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_JGwWNGJdvx8",
+                sourceId = "ytmusic",
+                title = "Shape of You",
+                artistId = "ed_sheeran",
+                artistName = "Ed Sheeran",
+                albumId = "divide",
+                albumName = "÷ (Divide)",
+                durationMs = 233000L,
+                artworkUrl = "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_d5gf9dXHevw",
+                sourceId = "ytmusic",
+                title = "BIRDS OF A FEATHER",
+                artistId = "billie_eilish",
+                artistName = "Billie Eilish",
+                albumId = "hit_me_hard_and_soft",
+                albumName = "HIT ME HARD AND SOFT",
+                durationMs = 196000L,
+                artworkUrl = "https://i.ytimg.com/vi/d5gf9dXHevw/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_eVli-tstM5E",
+                sourceId = "ytmusic",
+                title = "Espresso",
+                artistId = "sabrina_carpenter",
+                artistName = "Sabrina Carpenter",
+                albumId = "short_n_sweet",
+                albumName = "Short n' Sweet",
+                durationMs = 175000L,
+                artworkUrl = "https://i.ytimg.com/vi/eVli-tstM5E/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_ic8j13piAhQ",
+                sourceId = "ytmusic",
+                title = "Cruel Summer",
+                artistId = "taylor_swift",
+                artistName = "Taylor Swift",
+                albumId = "lover",
+                albumName = "Lover",
+                durationMs = 178000L,
+                artworkUrl = "https://i.ytimg.com/vi/ic8j13piAhQ/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_T6eK-2OQtew",
+                sourceId = "ytmusic",
+                title = "Not Like Us",
+                artistId = "kendrick_lamar",
+                artistName = "Kendrick Lamar",
+                albumId = "not_like_us",
+                albumName = "Not Like Us",
+                durationMs = 274000L,
+                artworkUrl = "https://i.ytimg.com/vi/T6eK-2OQtew/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_dvgZkm1xWPE",
+                sourceId = "ytmusic",
+                title = "Viva La Vida",
+                artistId = "coldplay",
+                artistName = "Coldplay",
+                albumId = "viva_la_vida",
+                albumName = "Viva La Vida",
+                durationMs = 242000L,
+                artworkUrl = "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg"
+            )
+        )
     }
 }

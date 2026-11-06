@@ -3,9 +3,10 @@ package app.vicsmusic.feature.search
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +35,7 @@ import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.ui.R
 import app.vicsmusic.core.ui.component.EmptyContent
 import app.vicsmusic.core.ui.component.ErrorContent
+import app.vicsmusic.core.ui.component.ExtensionCard
 import app.vicsmusic.core.ui.component.ShimmerList
 import app.vicsmusic.core.ui.component.TrackRow
 
@@ -157,7 +160,7 @@ fun SearchScreen(
             }
         }
 
-        // Search Content
+        // Search Content / Spotify Style Catalog
         when {
             uiState.isSearching -> {
                 ShimmerList(count = 6, modifier = Modifier.fillMaxSize())
@@ -170,11 +173,38 @@ fun SearchScreen(
                 )
             }
             uiState.query.trim().isEmpty() -> {
-                EmptyContent(
-                    title = stringResource(R.string.search_initial_prompt),
-                    message = stringResource(R.string.search_initial_prompt_desc),
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Spotify-styled Catalog View
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 120.dp)
+                ) {
+                    item {
+                        Text(
+                            text = "Explorar catálogo y fuentes",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                        Text(
+                            text = "Extensiones activas para streaming, metadatos y letras sincronizadas",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
+                    items(
+                        items = uiState.catalogExtensions,
+                        key = { it.id }
+                    ) { extension ->
+                        ExtensionCard(
+                            extension = extension,
+                            onClick = { onQueryChange(extension.name) }
+                        )
+                    }
+                }
             }
             uiState.filteredResults.isEmpty() -> {
                 EmptyContent(

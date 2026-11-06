@@ -38,6 +38,12 @@ object SourceModule {
 
     @Provides
     @Singleton
+    fun provideExtensionRegistryClient(httpClient: HttpClient): app.vicsmusic.core.network.ExtensionRegistryClient {
+        return app.vicsmusic.core.network.ExtensionRegistryClient(httpClient)
+    }
+
+    @Provides
+    @Singleton
     fun provideSourceRegistry(
         @ApplicationContext context: Context,
         youTubeMusicSource: YouTubeMusicSource

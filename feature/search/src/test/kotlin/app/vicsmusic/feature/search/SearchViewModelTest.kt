@@ -1,7 +1,10 @@
 package app.vicsmusic.feature.search
 
 import app.vicsmusic.core.domain.usecase.SearchTracksUseCase
+import app.vicsmusic.core.model.ExtensionItem
+import app.vicsmusic.core.model.ExtensionRegistry
 import app.vicsmusic.core.model.Track
+import app.vicsmusic.core.network.ExtensionRegistryClient
 import app.vicsmusic.core.player.PlaybackConnection
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -17,6 +20,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -26,6 +30,7 @@ class SearchViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val searchTracksUseCase: SearchTracksUseCase = mockk()
     private val playbackConnection: PlaybackConnection = mockk(relaxed = true)
+    private val extensionRegistryClient: ExtensionRegistryClient = mockk()
 
     private val track1 = Track(
         id = "1",
@@ -51,6 +56,19 @@ class SearchViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        coEvery { extensionRegistryClient.fetchRegistry(any()) } returns Result.success(
+            ExtensionRegistry(
+                version = 1,
+                extensions = listOf(
+                    ExtensionItem(
+                        id = "spotify-web",
+                        name = "spotify-web",
+                        displayName = "Spotify Web",
+                        version = "1.0.0"
+                    )
+                )
+            )
+        )
     }
 
     @After
@@ -59,10 +77,21 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun `initial load loads catalog extensions`() = runTest(testDispatcher) {
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoadingCatalog)
+        assertEquals(1, state.catalogExtensions.size)
+        assertEquals("Spotify Web", state.catalogExtensions.first().displayName)
+    }
+
+    @Test
     fun `when query is typed, debounces and performs search`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1, track2))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
         viewModel.onQueryChange("Queen")
 
         advanceTimeBy(350)
@@ -78,7 +107,7 @@ class SearchViewModelTest {
     fun `filter changes filter results accordingly`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Bohemian") } returns Result.success(listOf(track1))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
         viewModel.onQueryChange("Bohemian")
 
         advanceTimeBy(350)
@@ -95,7 +124,7 @@ class SearchViewModelTest {
     fun `playTrack delegates to playbackConnection playQueue`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
         viewModel.onQueryChange("Queen")
         advanceTimeBy(350)
         advanceUntilIdle()

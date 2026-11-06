@@ -3,7 +3,9 @@ package app.vicsmusic.feature.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.vicsmusic.core.domain.usecase.SearchTracksUseCase
+import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.Track
+import app.vicsmusic.core.network.ExtensionRegistryClient
 import app.vicsmusic.core.player.PlaybackConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -30,6 +32,8 @@ data class SearchUiState(
     val isSearching: Boolean = false,
     val results: List<Track> = emptyList(),
     val filteredResults: List<Track> = emptyList(),
+    val catalogExtensions: List<ExtensionItem> = emptyList(),
+    val isLoadingCatalog: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -37,7 +41,8 @@ data class SearchUiState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val searchTracksUseCase: SearchTracksUseCase,
-    private val playbackConnection: PlaybackConnection
+    private val playbackConnection: PlaybackConnection,
+    private val extensionRegistryClient: ExtensionRegistryClient
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -46,6 +51,11 @@ class SearchViewModel @Inject constructor(
     private val queryFlow = MutableStateFlow("")
 
     init {
+        loadCatalog()
+        observeQuery()
+    }
+
+    private fun observeQuery() {
         viewModelScope.launch {
             queryFlow
                 .debounce(300)
@@ -53,6 +63,24 @@ class SearchViewModel @Inject constructor(
                 .collectLatest { query ->
                     performSearch(query)
                 }
+        }
+    }
+
+    fun loadCatalog() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingCatalog = true) }
+            val result = extensionRegistryClient.fetchRegistry(REGISTRY_URL)
+            result.onSuccess { registry ->
+                _uiState.update { it.copy(catalogExtensions = registry.extensions, isLoadingCatalog = false) }
+            }.onFailure {
+                // Default Spotify-style starter extensions fallback if offline
+                _uiState.update {
+                    it.copy(
+                        catalogExtensions = defaultExtensions,
+                        isLoadingCatalog = false
+                    )
+                }
+            }
         }
     }
 
@@ -121,5 +149,48 @@ class SearchViewModel @Inject constructor(
         val queue = _uiState.value.filteredResults.ifEmpty { listOf(track) }
         val index = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
         playbackConnection.playQueue(queue, index)
+    }
+
+    companion object {
+        const val REGISTRY_URL = "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/registry.json"
+
+        val defaultExtensions = listOf(
+            ExtensionItem(
+                id = "spotify-web",
+                name = "spotify-web",
+                displayName = "Spotify Web",
+                version = "1.10.6",
+                description = "Metadatos, créditos de álbum y discografía con enriquecimiento de género",
+                category = "integration",
+                tags = listOf("spotify", "metadata", "catalog")
+            ),
+            ExtensionItem(
+                id = "apple-music",
+                name = "apple-music",
+                displayName = "Apple Music",
+                version = "1.4.16",
+                description = "Metadatos y letras sincronizadas con caché optimizada",
+                category = "integration",
+                tags = listOf("apple", "lyrics", "metadata")
+            ),
+            ExtensionItem(
+                id = "soundcloud",
+                name = "soundcloud",
+                displayName = "SoundCloud",
+                version = "1.0.14",
+                description = "Búsqueda completa y reproducción directa de streams AAC",
+                category = "download",
+                tags = listOf("soundcloud", "streaming", "aac")
+            ),
+            ExtensionItem(
+                id = "ytmusic-spotiflac",
+                name = "ytmusic-spotiflac",
+                displayName = "YouTube Music",
+                version = "2.4.6",
+                description = "Catálogo universal de audio sin anuncios ni restricciones",
+                category = "download",
+                tags = listOf("youtube", "streaming", "lossless")
+            )
+        )
     }
 }

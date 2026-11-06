@@ -35,4 +35,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setLastPlayed(trackId: String, positionMs: Long) {
         dataStore.setLastPlayed(trackId, positionMs)
     }
+
+    override suspend fun setActiveSourceIds(sourceIds: Set<String>) {
+        dataStore.setActiveSourceIds(sourceIds)
+    }
 }

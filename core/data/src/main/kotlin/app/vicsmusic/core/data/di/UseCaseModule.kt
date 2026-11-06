@@ -46,4 +46,9 @@ object UseCaseModule {
     fun provideGetPlaylistsUseCase(
         playlistRepository: PlaylistRepository
     ): GetPlaylistsUseCase = GetPlaylistsUseCase(playlistRepository)
+
+    @Provides
+    @Singleton
+    fun provideAdaptiveRecommendationEngine(): app.vicsmusic.core.domain.engine.AdaptiveRecommendationEngine =
+        app.vicsmusic.core.domain.engine.AdaptiveRecommendationEngine()
 }

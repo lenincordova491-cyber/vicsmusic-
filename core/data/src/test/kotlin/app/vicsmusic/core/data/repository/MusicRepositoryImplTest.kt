@@ -29,6 +29,12 @@ import org.robolectric.RobolectricTestRunner
 class MusicRepositoryImplTest {
 
     private val trackDao: TrackDao = mockk(relaxed = true)
+    private val downloadDao: app.vicsmusic.core.database.dao.DownloadDao = mockk(relaxed = true)
+    private val lyricsDao: app.vicsmusic.core.database.dao.LyricsDao = mockk(relaxed = true)
+    private val playHistoryDao: app.vicsmusic.core.database.dao.PlayHistoryDao = mockk(relaxed = true)
+    private val lrclibClient: app.vicsmusic.core.network.LrclibClient = mockk(relaxed = true)
+    private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient = mockk(relaxed = true)
+    private val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
     private val sourceRegistry: SourceRegistry = SourceRegistry()
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: MusicRepositoryImpl
@@ -37,7 +43,13 @@ class MusicRepositoryImplTest {
     fun setup() {
         repository = MusicRepositoryImpl(
             trackDao = trackDao,
+            downloadDao = downloadDao,
+            lyricsDao = lyricsDao,
+            playHistoryDao = playHistoryDao,
             sourceRegistry = sourceRegistry,
+            lrclibClient = lrclibClient,
+            extensionRegistryClient = extensionRegistryClient,
+            context = context,
             ioDispatcher = testDispatcher
         )
     }

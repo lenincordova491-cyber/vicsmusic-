@@ -12,4 +12,5 @@ interface UserPreferencesRepository {
     suspend fun setCellularQuality(quality: AudioQuality)
     suspend fun setCrossfadeDuration(seconds: Int)
     suspend fun setLastPlayed(trackId: String, positionMs: Long)
+    suspend fun setActiveSourceIds(sourceIds: Set<String>)
 }

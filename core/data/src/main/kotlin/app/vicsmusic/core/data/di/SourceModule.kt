@@ -44,6 +44,12 @@ object SourceModule {
 
     @Provides
     @Singleton
+    fun provideLrclibClient(httpClient: HttpClient): app.vicsmusic.core.network.LrclibClient {
+        return app.vicsmusic.core.network.LrclibClient(httpClient)
+    }
+
+    @Provides
+    @Singleton
     fun provideSourceRegistry(
         @ApplicationContext context: Context,
         youTubeMusicSource: YouTubeMusicSource

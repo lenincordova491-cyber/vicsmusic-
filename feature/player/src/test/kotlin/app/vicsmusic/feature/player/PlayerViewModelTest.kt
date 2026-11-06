@@ -24,6 +24,7 @@ class PlayerViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private val playbackConnection: PlaybackConnection = mockk(relaxed = true)
+    private val musicRepository: app.vicsmusic.core.domain.repository.MusicRepository = mockk(relaxed = true)
     private val toggleLikeUseCase: ToggleLikeUseCase = mockk(relaxed = true)
 
     private val playbackStateFlow = MutableStateFlow(PlaybackState())
@@ -43,7 +44,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `togglePlayPause delegates to playbackConnection`() = runTest(testDispatcher) {
-        val viewModel = PlayerViewModel(playbackConnection, toggleLikeUseCase)
+        val viewModel = PlayerViewModel(playbackConnection, musicRepository, toggleLikeUseCase)
         advanceUntilIdle()
 
         viewModel.togglePlayPause()
@@ -52,7 +53,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `skipNext delegates to playbackConnection`() = runTest(testDispatcher) {
-        val viewModel = PlayerViewModel(playbackConnection, toggleLikeUseCase)
+        val viewModel = PlayerViewModel(playbackConnection, musicRepository, toggleLikeUseCase)
         advanceUntilIdle()
 
         viewModel.skipNext()
@@ -61,7 +62,7 @@ class PlayerViewModelTest {
 
     @Test
     fun `seekTo delegates to playbackConnection`() = runTest(testDispatcher) {
-        val viewModel = PlayerViewModel(playbackConnection, toggleLikeUseCase)
+        val viewModel = PlayerViewModel(playbackConnection, musicRepository, toggleLikeUseCase)
         advanceUntilIdle()
 
         viewModel.seekTo(15_000L)

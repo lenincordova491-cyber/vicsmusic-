@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -30,6 +33,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,8 +46,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,10 +80,12 @@ fun NowPlayingRoute(
 ) {
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
+    val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
 
     NowPlayingScreen(
         playbackState = playbackState,
         queueState = queueState,
+        lyrics = lyrics,
         onDismiss = onDismiss,
         onPlayPauseClick = viewModel::togglePlayPause,
         onSkipNextClick = viewModel::skipNext,
@@ -95,6 +104,7 @@ fun NowPlayingRoute(
 fun NowPlayingScreen(
     playbackState: PlaybackState,
     queueState: QueueState,
+    lyrics: app.vicsmusic.core.model.Lyrics? = null,
     onDismiss: () -> Unit,
     onPlayPauseClick: () -> Unit,
     onSkipNextClick: () -> Unit,
@@ -116,9 +126,9 @@ fun NowPlayingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Top Bar
             Row(
@@ -329,6 +339,73 @@ fun NowPlayingScreen(
                         contentDescription = stringResource(R.string.repeat),
                         tint = tint
                     )
+                }
+            }
+
+            // Spotify Synced Lyrics Card
+            if (lyrics != null && lyrics.lines.isNotEmpty()) {
+                val activeIndex = lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }.coerceAtLeast(0)
+                val listState = rememberLazyListState()
+
+                LaunchedEffect(activeIndex) {
+                    if (activeIndex >= 0) {
+                        listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF242424)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Letras",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            if (lyrics.isSynced) {
+                                Text(
+                                    text = "Sincronizadas",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF1DB954),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            itemsIndexed(lyrics.lines) { index, line ->
+                                val isCurrent = index == activeIndex
+                                Text(
+                                    text = line.text,
+                                    style = if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSeekTo(line.timeMs) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

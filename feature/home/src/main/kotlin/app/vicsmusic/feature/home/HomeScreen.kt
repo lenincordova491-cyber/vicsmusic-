@@ -1,7 +1,9 @@
 package app.vicsmusic.feature.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,33 +17,48 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileDownloadDone
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.Track
-import app.vicsmusic.core.ui.R
 import app.vicsmusic.core.ui.component.ArtworkImage
 import app.vicsmusic.core.ui.component.EmptyContent
-import app.vicsmusic.core.ui.component.ErrorContent
 import app.vicsmusic.core.ui.component.ShimmerList
 import app.vicsmusic.core.ui.component.TrackRow
+
+private val SpotifyGreen = Color(0xFF1DB954)
+private val SpotifyDarkCard = Color(0xFF242424)
+private val SpotifyCardHover = Color(0xFF2A2A2A)
 
 @Composable
 fun HomeRoute(
@@ -57,7 +74,11 @@ fun HomeRoute(
             viewModel.playTrack(track, list)
             onNavigateToPlayer()
         },
-        onScanClick = viewModel::syncLocalTracks,
+        onFilterSelected = viewModel::onFilterSelected,
+        onSettingsClick = { viewModel.setSettingsOpen(true) },
+        onDismissSettings = { viewModel.setSettingsOpen(false) },
+        onToggleExtension = viewModel::toggleExtension,
+        onDownloadTrack = viewModel::downloadTrack,
         modifier = modifier
     )
 }
@@ -66,161 +87,580 @@ fun HomeRoute(
 fun HomeScreen(
     uiState: HomeUiState,
     onTrackClick: (Track, List<Track>) -> Unit,
-    onScanClick: () -> Unit,
+    onFilterSelected: (HomeCategoryFilter) -> Unit,
+    onSettingsClick: () -> Unit,
+    onDismissSettings: () -> Unit,
+    onToggleExtension: (String) -> Unit,
+    onDownloadTrack: (Track) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        // Top Header
-        Row(
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column {
-                Text(
-                    text = "Vicsmusic",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(R.string.home_greeting),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onScanClick) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = stringResource(R.string.home_scan_button),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        when {
-            uiState.isLoading && uiState.localTracks.isEmpty() -> {
-                ShimmerList(count = 6, modifier = Modifier.fillMaxSize())
-            }
-            uiState.errorMessage != null && uiState.localTracks.isEmpty() -> {
-                ErrorContent(
-                    message = uiState.errorMessage,
-                    onRetry = onScanClick,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            uiState.localTracks.isEmpty() -> {
-                EmptyContent(
-                    title = stringResource(R.string.home_empty_title),
-                    message = stringResource(R.string.home_empty_description),
-                    actionLabel = stringResource(R.string.home_scan_button),
-                    onActionClick = onScanClick,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 120.dp)
+            // 1. Spotify Top Bar: Greeting + Settings Gear (Tuerca de Ajustes)
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (uiState.recentTracks.isNotEmpty()) {
-                        item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // User Avatar
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SpotifyGreen),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = stringResource(R.string.home_recent),
+                                text = "V",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
                             )
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(
-                                    items = uiState.recentTracks,
-                                    key = { "recent_${it.id}" }
-                                ) { track ->
-                                    RecentTrackCard(
-                                        track = track,
-                                        onClick = { onTrackClick(track, uiState.recentTracks) }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
-                    }
 
-                    item {
                         Text(
-                            text = stringResource(R.string.home_local_music),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            text = uiState.greeting,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    items(
-                        items = uiState.localTracks,
-                        key = { it.id }
-                    ) { track ->
-                        TrackRow(
-                            track = track,
-                            onClick = { onTrackClick(track, uiState.localTracks) }
+                    // Settings Gear Button (Tuerca de ajustes para configurar extensiones)
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SpotifyDarkCard)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Ajustes y Extensiones",
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
             }
+
+            // 2. Spotify Category Filter Chips ("Todos", "Música", "Podcasts", "Descargas")
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        SpotifyFilterChip(
+                            label = "Todos",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.ALL,
+                            onClick = { onFilterSelected(HomeCategoryFilter.ALL) }
+                        )
+                    }
+                    item {
+                        SpotifyFilterChip(
+                            label = "Música",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.MUSIC,
+                            onClick = { onFilterSelected(HomeCategoryFilter.MUSIC) }
+                        )
+                    }
+                    item {
+                        SpotifyFilterChip(
+                            label = "Podcasts",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.PODCASTS,
+                            onClick = { onFilterSelected(HomeCategoryFilter.PODCASTS) }
+                        )
+                    }
+                    item {
+                        SpotifyFilterChip(
+                            label = "Descargas (Offline)",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS,
+                            onClick = { onFilterSelected(HomeCategoryFilter.DOWNLOADS) }
+                        )
+                    }
+                }
+            }
+
+            // 3. Quick Access Grid (2x3 Spotify style)
+            if (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC) {
+                if (uiState.quickAccessTracks.isNotEmpty()) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val chunked = uiState.quickAccessTracks.chunked(2)
+                            chunked.forEach { pair ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    QuickAccessCard(
+                                        track = pair[0],
+                                        onClick = { onTrackClick(pair[0], uiState.quickAccessTracks) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (pair.size > 1) {
+                                        QuickAccessCard(
+                                            track = pair[1],
+                                            onClick = { onTrackClick(pair[1], uiState.quickAccessTracks) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Hero "Nuevo lanzamiento para ti" (Featured Release Banner)
+            if (uiState.featuredRelease != null && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text(
+                            text = "Nuevo lanzamiento para ti",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        HeroReleaseCard(
+                            track = uiState.featuredRelease,
+                            onPlayClick = { onTrackClick(uiState.featuredRelease, listOf(uiState.featuredRelease)) },
+                            onDownloadClick = { onDownloadTrack(uiState.featuredRelease) },
+                            isDownloading = uiState.downloadingTrackId == uiState.featuredRelease.id
+                        )
+                    }
+                }
+            }
+
+            // 5. "Recomendado para ti" (Adaptive Taste Carousel)
+            if (uiState.dailyMix.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Recomendado para ti")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.dailyMix, key = { "daily_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.dailyMix) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 6. "Top Tendencias Globales" (Trending hits carousel)
+            if (uiState.trendingTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Top Éxitos Globales")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.trendingTracks, key = { "trend_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.trendingTracks) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 7. Descargas (100% Offline Songs stored on device)
+            if (uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS || (uiState.selectedFilter == HomeCategoryFilter.ALL && uiState.downloadedTracks.isNotEmpty())) {
+                item {
+                    SectionHeader(title = "Descargas locales (100% Offline)")
+                }
+                if (uiState.downloadedTracks.isEmpty()) {
+                    item {
+                        EmptyContent(
+                            title = "Sin canciones descargadas",
+                            message = "Descarga música para escucharla sin conexión a internet en cualquier momento.",
+                            modifier = Modifier.fillMaxWidth().height(180.dp)
+                        )
+                    }
+                } else {
+                    items(uiState.downloadedTracks, key = { "dl_${it.id}" }) { track ->
+                        TrackRow(
+                            track = track,
+                            onClick = { onTrackClick(track, uiState.downloadedTracks) }
+                        )
+                    }
+                }
+            }
+
+            // 8. Extensiones y Fuentes Activas
+            item {
+                SectionHeader(title = "Fuentes de música activas")
+                Text(
+                    text = "Configuradas desde el icono de tuerca para streaming sin anuncios",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(uiState.availableExtensions, key = { it.id }) { ext ->
+                        val isActive = uiState.activeExtensionIds.contains(ext.id)
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isActive) SpotifyCardHover else SpotifyDarkCard.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.width(160.dp).clickable { onSettingsClick() }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = ext.displayName,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (isActive) SpotifyGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (isActive) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Activa",
+                                            tint = SpotifyGreen,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = ext.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Settings Dialog (Tuerca de Ajustes de Extensiones)
+        if (uiState.isSettingsOpen) {
+            SettingsExtensionsDialog(
+                extensions = uiState.availableExtensions,
+                activeIds = uiState.activeExtensionIds,
+                onToggle = onToggleExtension,
+                onDismiss = onDismissSettings
+            )
         }
     }
 }
 
 @Composable
-fun RecentTrackCard(
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun SpotifyFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            )
+        },
+        shape = RoundedCornerShape(16.dp),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = SpotifyGreen,
+            selectedLabelColor = Color.Black,
+            containerColor = SpotifyDarkCard,
+            labelColor = Color.White
+        )
+    )
+}
+
+@Composable
+private fun QuickAccessCard(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
-            .width(130.dp)
+            .height(56.dp)
+            .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard)
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize()
         ) {
             ArtworkImage(
                 artworkUrl = track.artworkUrl,
                 contentDescription = track.title,
-                size = 114.dp,
-                cornerRadius = 8.dp,
-                modifier = Modifier
-                    .size(114.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                size = 56.dp,
+                cornerRadius = 6.dp
             )
-            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = track.artistName.ifBlank { stringResource(R.string.unknown_artist) },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
             )
         }
     }
+}
+
+@Composable
+private fun HeroReleaseCard(
+    track: Track,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    isDownloading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ArtworkImage(
+                artworkUrl = track.artworkUrl,
+                contentDescription = track.title,
+                size = 80.dp,
+                cornerRadius = 8.dp
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = track.artistName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Streaming sin anuncios",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SpotifyGreen
+                )
+            }
+
+            // Download Icon Button
+            IconButton(onClick = onDownloadClick) {
+                if (isDownloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = SpotifyGreen,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Descargar en el móvil",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Spotify Round Green Play Button
+            IconButton(
+                onClick = onPlayClick,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(SpotifyGreen)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Reproducir",
+                    tint = Color.Black,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaCard(
+    track: Track,
+    onClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(136.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box {
+            ArtworkImage(
+                artworkUrl = track.artworkUrl,
+                contentDescription = track.title,
+                size = 136.dp,
+                cornerRadius = 8.dp
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = track.artistName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SettingsExtensionsDialog(
+    extensions: List<ExtensionItem>,
+    activeIds: Set<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = SpotifyGreen,
+                    modifier = Modifier.size(24.dp).padding(end = 8.dp)
+                )
+                Text(
+                    text = "Ajustes de Extensiones",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().height(360.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Activa o desactiva fuentes para personalizar el catálogo y streaming en Inicio:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(extensions, key = { it.id }) { ext ->
+                    val isChecked = activeIds.contains(ext.id)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SpotifyDarkCard)
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = ext.displayName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = ext.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Switch(
+                            checked = isChecked,
+                            onCheckedChange = { onToggle(ext.id) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = SpotifyGreen,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = SpotifyCardHover
+                            )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cerrar", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = Color(0xFF1E1E1E),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
 }

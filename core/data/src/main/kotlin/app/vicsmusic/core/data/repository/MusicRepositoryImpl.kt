@@ -108,6 +108,7 @@ class MusicRepositoryImpl @Inject constructor(
     private fun resolveSourceId(trackId: String): String {
         return when {
             trackId.startsWith("local_") -> LocalMusicSource.SOURCE_ID
+            trackId.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX) -> app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID
             trackId.startsWith("jamendo_") -> "jamendo"
             else -> "local"
         }

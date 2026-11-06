@@ -144,4 +144,20 @@ class MusicRepositoryImplTest {
         assertEquals(1, syncResult.getOrThrow())
         coVerify(exactly = 1) { trackDao.upsertTracks(any()) }
     }
+
+    @Test
+    fun getStreamInfoResolvesYouTubeSourceIdByPrefix() = runTest(testDispatcher) {
+        val mockYtSource: MusicSource = mockk()
+        every { mockYtSource.id } returns app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID
+        coEvery { mockYtSource.getStream("yt_dQw4w9WgXcQ", AudioQuality.HIGH) } returns Result.success(
+            StreamInfo(trackId = "yt_dQw4w9WgXcQ", url = "https://googlevideo.com/stream", bitrateKbps = 160)
+        )
+        sourceRegistry.register(mockYtSource)
+
+        every { trackDao.getTrack("yt_dQw4w9WgXcQ") } returns flowOf(null)
+
+        val stream = repository.getStreamInfo("yt_dQw4w9WgXcQ", AudioQuality.HIGH)
+        assertTrue(stream.isSuccess)
+        assertEquals("https://googlevideo.com/stream", stream.getOrThrow().url)
+    }
 }

@@ -25,11 +25,12 @@ android {
 
 dependencies {
     implementation(project(":core:common"))
-    implementation(libs.ktor.client.core)
+    // Exposed as API so consumers can reference HttpClient without redeclaring Ktor.
+    api(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.kotlinx.serialization.json)
+    api(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
 }

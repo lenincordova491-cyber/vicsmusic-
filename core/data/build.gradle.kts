@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":core:datastore"))
     implementation(project(":source:api"))
     implementation(project(":source:local"))
+    implementation(project(":source:remote"))
     implementation(libs.room.runtime)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.hilt.android)

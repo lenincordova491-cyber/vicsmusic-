@@ -107,7 +107,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. Spotify Top Bar: Greeting + Settings Gear (Tuerca de Ajustes)
-            item {
+            item(key = "top_bar") {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,33 +161,33 @@ fun HomeScreen(
             }
 
             // 2. Spotify Category Filter Chips ("Todos", "Música", "Descargas", "Podcasts")
-            item {
+            item(key = "category_filters") {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    item {
+                    item(key = "chip_all") {
                         SpotifyFilterChip(
                             label = "Todos",
                             selected = uiState.selectedFilter == HomeCategoryFilter.ALL,
                             onClick = { onFilterSelected(HomeCategoryFilter.ALL) }
                         )
                     }
-                    item {
+                    item(key = "chip_music") {
                         SpotifyFilterChip(
                             label = "Música",
                             selected = uiState.selectedFilter == HomeCategoryFilter.MUSIC,
                             onClick = { onFilterSelected(HomeCategoryFilter.MUSIC) }
                         )
                     }
-                    item {
+                    item(key = "chip_downloads") {
                         SpotifyFilterChip(
                             label = "Descargas (Offline)",
                             selected = uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS,
                             onClick = { onFilterSelected(HomeCategoryFilter.DOWNLOADS) }
                         )
                     }
-                    item {
+                    item(key = "chip_podcasts") {
                         SpotifyFilterChip(
                             label = "Podcasts",
                             selected = uiState.selectedFilter == HomeCategoryFilter.PODCASTS,
@@ -200,7 +200,7 @@ fun HomeScreen(
             // 3. Quick Access Grid (2x3 Spotify style)
             if (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC) {
                 if (uiState.quickAccessTracks.isNotEmpty()) {
-                    item {
+                    item(key = "quick_access_grid") {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             val chunked = uiState.quickAccessTracks.chunked(2)
                             chunked.forEach { pair ->
@@ -231,7 +231,7 @@ fun HomeScreen(
 
             // 4. Hero "Nuevo lanzamiento para ti" (Featured Release Banner)
             if (uiState.featuredRelease != null && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "featured_release_hero") {
                     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                         Text(
                             text = "Nuevo lanzamiento para ti",
@@ -252,7 +252,7 @@ fun HomeScreen(
 
             // 5. "Tu Mix Diario" + "Descubrimiento según tu gusto" (Adaptive Taste Carousels)
             if (uiState.dailyMix.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "daily_mix_carousel") {
                     SectionHeader(title = "Recomendado para ti")
                     Text(
                         text = uiState.tasteSummaryLabel,
@@ -277,7 +277,7 @@ fun HomeScreen(
             }
 
             if (uiState.recommendedTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "recommended_discovery_carousel") {
                     SectionHeader(title = "Descubrimiento según tu gusto")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -296,7 +296,7 @@ fun HomeScreen(
 
             // 6. "Top Tendencias Globales" (Trending hits carousel)
             if (uiState.trendingTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "trending_hits_carousel") {
                     SectionHeader(title = "Top Éxitos Globales")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -315,7 +315,7 @@ fun HomeScreen(
 
             // 7. "Cumbia y Fiesta" Carousel
             if (uiState.cumbiaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "cumbia_carousel") {
                     SectionHeader(title = "Cumbia y Fiesta")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -334,7 +334,7 @@ fun HomeScreen(
 
             // 8. "Rock & Pop Clásicos" Carousel
             if (uiState.rockPopTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "rock_pop_carousel") {
                     SectionHeader(title = "Rock y Pop Clásicos")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -353,7 +353,7 @@ fun HomeScreen(
 
             // 9. "Urbano & Pop Latino" Carousel
             if (uiState.urbanTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "urban_carousel") {
                     SectionHeader(title = "Urbano y Tendencias")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -372,7 +372,7 @@ fun HomeScreen(
 
             // 9b. "Salsa Clásica y Bailable" Carousel
             if (uiState.salsaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
-                item {
+                item(key = "salsa_carousel") {
                     SectionHeader(title = "Salsa Clásica y Bailable")
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -391,7 +391,7 @@ fun HomeScreen(
 
             // 10. Podcasts Empty State
             if (uiState.selectedFilter == HomeCategoryFilter.PODCASTS) {
-                item {
+                item(key = "podcasts_empty_view") {
                     EmptyContent(
                         title = "Podcasts próximamente",
                         message = "Explora tus canciones y artistas favoritos en las pestañas Todos, Música o Descargas.",
@@ -402,11 +402,11 @@ fun HomeScreen(
 
             // 8. Descargas (100% Offline Songs stored on device)
             if (uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS || (uiState.selectedFilter == HomeCategoryFilter.ALL && uiState.downloadedTracks.isNotEmpty())) {
-                item {
+                item(key = "downloads_section_header") {
                     SectionHeader(title = "Descargas locales (100% Offline)")
                 }
                 if (uiState.downloadedTracks.isEmpty()) {
-                    item {
+                    item(key = "downloads_empty_view") {
                         EmptyContent(
                             title = "Sin canciones descargadas",
                             message = "Descarga música para escucharla sin conexión a internet en cualquier momento.",
@@ -424,7 +424,7 @@ fun HomeScreen(
             }
 
             // 8. Extensiones y Fuentes Activas
-            item {
+            item(key = "active_sources_section") {
                 SectionHeader(title = "Fuentes de música activas")
                 Text(
                     text = "Configuradas desde el icono de tuerca para streaming sin anuncios",

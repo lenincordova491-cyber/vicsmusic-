@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -131,6 +132,35 @@ fun NowPlayingScreen(
     val track = playbackState.currentTrack
     var showQueueSheet by remember { mutableStateOf(false) }
     var showFullScreenLyrics by remember { mutableStateOf(false) }
+
+    val hasLyrics = lyrics != null && lyrics.lines.isNotEmpty()
+
+    val activeIndex by remember(lyrics, playbackState.positionMs) {
+        derivedStateOf {
+            val lines = lyrics?.lines.orEmpty()
+            if (lines.isEmpty() || lyrics?.isSynced != true) 0
+            else {
+                val pos = playbackState.positionMs + 180L // 180ms visual anticipation
+                val idx = lines.binarySearch { it.timeMs.compareTo(pos) }
+                if (idx >= 0) idx else (-idx - 2).coerceAtLeast(0)
+            }
+        }
+    }
+    val cardScrollState = rememberScrollState()
+    var lastUserScrollTimeMs by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(cardScrollState.isScrollInProgress) {
+        if (cardScrollState.isScrollInProgress) {
+            lastUserScrollTimeMs = System.currentTimeMillis()
+        }
+    }
+
+    LaunchedEffect(activeIndex, track?.id, hasLyrics) {
+        val userRecentlyScrolled = (System.currentTimeMillis() - lastUserScrollTimeMs) < 3_500L
+        if (hasLyrics && lyrics != null && lyrics.isSynced && activeIndex >= 0 && !cardScrollState.isScrollInProgress && !userRecentlyScrolled) {
+            cardScrollState.animateScrollTo((activeIndex * 90).coerceAtLeast(0))
+        }
+    }
 
     val lyricsCardColor = remember(track?.id) {
         val vibrantPalettes = listOf(
@@ -240,9 +270,9 @@ fun NowPlayingScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Center Artwork
+            // Center Album Artwork
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.85f)
@@ -260,7 +290,7 @@ fun NowPlayingScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             // Title & Artist with Like Button
             Row(
@@ -439,106 +469,71 @@ fun NowPlayingScreen(
                 }
             }
 
-            // Spotify Professional Synced Karaoke Lyrics Card (O(log N) binarySearch + non-intrusive user scroll)
-            val hasLyrics = lyrics != null && lyrics.lines.isNotEmpty()
-            val activeIndex by remember(lyrics, playbackState.positionMs) {
-                derivedStateOf {
-                    val lines = lyrics?.lines.orEmpty()
-                    if (lines.isEmpty() || lyrics?.isSynced != true) 0
-                    else {
-                        val pos = playbackState.positionMs + 180L // 180ms visual anticipation
-                        val idx = lines.binarySearch { it.timeMs.compareTo(pos) }
-                        if (idx >= 0) idx else (-idx - 2).coerceAtLeast(0)
-                    }
-                }
-            }
-            val listState = rememberLazyListState()
-            var lastUserScrollTimeMs by remember { mutableLongStateOf(0L) }
+            // Bottom Lyrics Card
+            if (hasLyrics && lyrics != null) {
+                Spacer(modifier = Modifier.height(20.dp))
 
-            LaunchedEffect(listState.isScrollInProgress) {
-                if (listState.isScrollInProgress) {
-                    lastUserScrollTimeMs = System.currentTimeMillis()
-                }
-            }
-
-            LaunchedEffect(activeIndex, track?.id, hasLyrics) {
-                val userRecentlyScrolled = (System.currentTimeMillis() - lastUserScrollTimeMs) < 4_000L
-                if (hasLyrics && lyrics != null && lyrics.isSynced && activeIndex >= 0 && !listState.isScrollInProgress && !userRecentlyScrolled) {
-                    listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
-                colors = CardDefaults.cardColors(containerColor = lyricsCardColor),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .padding(bottom = 20.dp)
-            ) {
-                Column(
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = lyricsCardColor),
+                    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    lyricsCardColor,
-                                    lyricsCardColor.copy(alpha = 0.85f),
-                                    Color(0xFF181818).copy(alpha = 0.45f)
+                        .fillMaxWidth()
+                        .height(340.dp)
+                        .padding(bottom = 24.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        lyricsCardColor,
+                                        lyricsCardColor.copy(alpha = 0.85f),
+                                        Color(0xFF181818).copy(alpha = 0.45f)
+                                    )
                                 )
                             )
-                        )
-                        .padding(20.dp)
-                ) {
-                    // Spotify Lyrics Card Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(20.dp)
                     ) {
-                        Column {
+                        // Spotify Lyrics Card Header: "Letras" + Expand Icon Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
                                 text = "Letras",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White
                             )
-                            Text(
-                                text = if (hasLyrics) "KARAOKE EN TIEMPO REAL • TOCA UN VERSO" else "BUSCANDO LETRA SINCRONIZADA...",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.78f),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        if (hasLyrics) {
-                            Box(
+
+                            IconButton(
+                                onClick = { showFullScreenLyrics = true },
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.Black.copy(alpha = 0.32f))
-                                    .clickable { showFullScreenLyrics = true }
-                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.35f))
                             ) {
-                                Text(
-                                    text = "Pantalla completa",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    imageVector = Icons.Default.Fullscreen,
+                                    contentDescription = "Pantalla completa",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    if (hasLyrics && lyrics != null) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .verticalScroll(cardScrollState),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            itemsIndexed(lyrics.lines) { index, line ->
+                            lyrics.lines.forEachIndexed { index, line ->
                                 val isCurrent = !lyrics.isSynced || index == activeIndex
                                 val isPast = lyrics.isSynced && index < activeIndex
                                 Text(
@@ -559,29 +554,6 @@ fun NowPlayingScreen(
                                         .clip(RoundedCornerShape(10.dp))
                                         .clickable(enabled = lyrics.isSynced) { onSeekTo(line.timeMs) }
                                         .padding(vertical = 2.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = "♪ ${track?.title ?: "Reproduciendo"} ♪",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "${track?.artistName ?: ""} • Modo Audio HD",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White.copy(alpha = 0.72f),
-                                    textAlign = TextAlign.Center
                                 )
                             }
                         }

@@ -10,12 +10,14 @@ import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.player.PlaybackConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -221,7 +223,9 @@ class HomeViewModel @Inject constructor(
                     activeExtensionIds = activeSources,
                     isAutoplayEnabled = prefs.isAutoplayEnabled
                 )
-            }.catch { throwable ->
+            }
+            .flowOn(Dispatchers.Default)
+            .catch { throwable ->
                 _uiState.update {
                     it.copy(
                         isLoading = false,

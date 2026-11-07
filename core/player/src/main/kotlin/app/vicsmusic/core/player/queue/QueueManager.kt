@@ -32,7 +32,7 @@ data class QueueState(
     val hasNext: Boolean
         get() = when (repeatMode) {
             RepeatMode.ONE, RepeatMode.ALL -> items.isNotEmpty()
-            RepeatMode.OFF -> currentIndex + 1 < items.size
+            RepeatMode.OFF -> items.isNotEmpty()
         }
 
     val hasPrevious: Boolean

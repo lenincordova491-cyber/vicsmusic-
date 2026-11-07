@@ -260,10 +260,10 @@ class PlayerManager @Inject constructor(
             errorMessage = null
         )
 
-        // Seamless queue lookahead: if fewer than 5 tracks remain ahead in queue, prefetch autoplay
+        // Seamless queue lookahead: if fewer than 6 tracks remain ahead in queue, prefetch autoplay
         val qState = queueManager.state.value
         val remaining = qState.items.size - (qState.currentIndex + 1)
-        if (remaining < 5 && qState.repeatMode == RepeatMode.OFF) {
+        if (remaining < 6) {
             triggerAutoplay(track, autoPlayNext = false)
         }
 
@@ -459,19 +459,24 @@ class PlayerManager @Inject constructor(
                 }
 
                 var candidateTracks = sameSourceTracks
+                val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
+
                 if (!isLocalTrack) {
-                    val currentArtistTracks = sameSourceTracks.filter {
-                        it.artistName.equals(current.artistName, ignoreCase = true) ||
-                        it.artistId.equals(current.artistId, ignoreCase = true)
-                    }
-                    if (currentArtistTracks.size < 4) {
-                        val searchResult = musicRepository.searchTracks(current.artistName).getOrNull().orEmpty()
+                    val searchQueries = listOf(
+                        "${current.artistName} mix",
+                        "${current.artistName} radio",
+                        "éxitos ${current.artistName}",
+                        "parecidas a ${current.title}"
+                    )
+                    for (query in searchQueries) {
+                        val remainingUnplayed = candidateTracks.filter { !currentQueueIds.contains(it.id) }
+                        if (remainingUnplayed.size >= 15) break
+                        val searchResult = musicRepository.searchTracks(query).getOrNull().orEmpty()
                             .filter { it.sourceId != "local" }
-                        candidateTracks = (sameSourceTracks + searchResult).distinctBy { it.id }
+                        candidateTracks = (candidateTracks + searchResult).distinctBy { it.id }
                     }
                 }
 
-                val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
                 var autoplayList = recommendationEngine.computeAutoplayQueue(
                     currentTrack = current,
                     allAvailableTracks = candidateTracks,
@@ -482,13 +487,16 @@ class PlayerManager @Inject constructor(
                     count = 10
                 )
 
-                // Guaranteed fallback pool within the SAME source type (never mix local and remote)
+                // Guaranteed infinite fallback pool: never stop playing
                 if (autoplayList.isEmpty()) {
-                    val fallbackPool = candidateTracks
-                        .filter { it.id != current.id && !currentQueueIds.contains(it.id) }
-                        .ifEmpty { candidateTracks.filter { it.id != current.id } }
-                    if (fallbackPool.isNotEmpty()) {
-                        autoplayList = fallbackPool.shuffled(Random(System.currentTimeMillis())).take(10)
+                    val unplayedPool = candidateTracks.filter { !currentQueueIds.contains(it.id) && it.id != current.id }
+                    if (unplayedPool.isNotEmpty()) {
+                        autoplayList = unplayedPool.shuffled(Random(System.currentTimeMillis())).take(10)
+                    } else {
+                        val fallbackPool = candidateTracks.filter { it.id != current.id }
+                        if (fallbackPool.isNotEmpty()) {
+                            autoplayList = fallbackPool.shuffled(Random(System.currentTimeMillis())).take(10)
+                        }
                     }
                 }
 

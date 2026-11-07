@@ -37,6 +37,9 @@ data class HomeUiState(
     val dailyMix: List<Track> = emptyList(),
     val recommendedTracks: List<Track> = emptyList(),
     val trendingTracks: List<Track> = emptyList(),
+    val cumbiaTracks: List<Track> = emptyList(),
+    val rockPopTracks: List<Track> = emptyList(),
+    val urbanTracks: List<Track> = emptyList(),
     val downloadedTracks: List<Track> = emptyList(),
     val availableExtensions: List<ExtensionItem> = emptyList(),
     val activeExtensionIds: Set<String> = setOf("ytmusic-spotiflac", "spotify-web", "soundcloud"),
@@ -61,7 +64,10 @@ class HomeViewModel @Inject constructor(
             featuredRelease = STARTER_TRACKS.first(),
             dailyMix = STARTER_TRACKS.drop(1).take(5),
             recommendedTracks = STARTER_TRACKS.takeLast(4),
-            trendingTracks = STARTER_TRACKS
+            trendingTracks = STARTER_TRACKS,
+            cumbiaTracks = CUMBIA_TRACKS,
+            rockPopTracks = ROCK_POP_TRACKS,
+            urbanTracks = URBAN_TRACKS
         )
     )
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -152,6 +158,36 @@ class HomeViewModel @Inject constructor(
                     STARTER_TRACKS
                 }
 
+                val cumbia = effectiveTracks.filter { track ->
+                    track.artistId in listOf("grupo_5", "ke_personajes", "angeles_azules", "agua_marina", "armonia_10", "corazon_serrano") ||
+                    track.artistName.contains("Grupo 5", ignoreCase = true) ||
+                    track.artistName.contains("Ke Personajes", ignoreCase = true) ||
+                    track.artistName.contains("Agua Marina", ignoreCase = true) ||
+                    track.artistName.contains("Armonía 10", ignoreCase = true) ||
+                    track.artistName.contains("Ángeles Azules", ignoreCase = true) ||
+                    track.artistName.contains("Corazón Serrano", ignoreCase = true)
+                }.ifEmpty { CUMBIA_TRACKS }
+
+                val rockPop = effectiveTracks.filter { track ->
+                    track.artistId in listOf("coldplay", "queen", "soda_stereo", "imagine_dragons", "the_weeknd", "bruno_mars", "dua_lipa", "ed_sheeran", "taylor_swift", "sabrina_carpenter", "enanitos_verdes", "mana") ||
+                    track.artistName.contains("Soda Stereo", ignoreCase = true) ||
+                    track.artistName.contains("Queen", ignoreCase = true) ||
+                    track.artistName.contains("Coldplay", ignoreCase = true) ||
+                    track.artistName.contains("Maná", ignoreCase = true) ||
+                    track.artistName.contains("Enanitos Verdes", ignoreCase = true) ||
+                    track.artistName.contains("Imagine Dragons", ignoreCase = true)
+                }.ifEmpty { ROCK_POP_TRACKS }
+
+                val urban = effectiveTracks.filter { track ->
+                    track.artistId in listOf("bad_bunny", "karol_g", "feid", "bizarrap", "manuel_turizo", "quevedo", "rauw_alejandro") ||
+                    track.artistName.contains("Bad Bunny", ignoreCase = true) ||
+                    track.artistName.contains("Karol G", ignoreCase = true) ||
+                    track.artistName.contains("Feid", ignoreCase = true) ||
+                    track.artistName.contains("Bizarrap", ignoreCase = true) ||
+                    track.artistName.contains("Manuel Turizo", ignoreCase = true) ||
+                    track.artistName.contains("Quevedo", ignoreCase = true)
+                }.ifEmpty { URBAN_TRACKS }
+
                 _uiState.value.copy(
                     isLoading = false,
                     quickAccessTracks = quickAccess,
@@ -159,6 +195,9 @@ class HomeViewModel @Inject constructor(
                     dailyMix = recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() }.ifEmpty { prioritized.drop(1).take(5) },
                     recommendedTracks = recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() }.ifEmpty { prioritized.takeLast(4) },
                     trendingTracks = currentTrending,
+                    cumbiaTracks = cumbia,
+                    rockPopTracks = rockPop,
+                    urbanTracks = urban,
                     downloadedTracks = downloaded,
                     activeExtensionIds = activeSources,
                     isAutoplayEnabled = prefs.isAutoplayEnabled
@@ -185,6 +224,9 @@ class HomeViewModel @Inject constructor(
                     musicRepository.searchTracks(artist)
                 }
             }
+            musicRepository.searchTracks("Cumbia Exitos")
+            musicRepository.searchTracks("Rock en Espanol")
+            musicRepository.searchTracks("Top Urbano")
             val trending = musicRepository.searchTracks("Top Global").getOrNull()
                 ?: musicRepository.searchTracks("Hits").getOrDefault(emptyList())
             if (trending.isNotEmpty()) {
@@ -232,8 +274,14 @@ class HomeViewModel @Inject constructor(
             musicRepository.recordPlayHistory(track.id, 0.8f)
         }
         if (fromQueue.isNotEmpty()) {
-            val index = fromQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playbackConnection.playQueue(fromQueue, index)
+            val fullQueue = if (fromQueue.size < 20) {
+                val more = STARTER_TRACKS.filter { cat -> fromQueue.none { it.id == cat.id } }
+                (fromQueue + more).distinctBy { it.id }
+            } else {
+                fromQueue
+            }
+            val index = fullQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            playbackConnection.playQueue(fullQueue, index)
         } else {
             playbackConnection.playTrack(track)
         }
@@ -262,8 +310,7 @@ class HomeViewModel @Inject constructor(
     }
 
     companion object {
-        val STARTER_TRACKS = listOf(
-            // Cumbia
+        val CUMBIA_TRACKS = listOf(
             Track(
                 id = "yt_w_LWtxTDr44",
                 sourceId = "ytmusic",
@@ -285,6 +332,17 @@ class HomeViewModel @Inject constructor(
                 albumName = "El Ritmo de Mi Corazón",
                 durationMs = 245000L,
                 artworkUrl = "https://i.ytimg.com/vi/o1HSd7QldRs/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_bL18EwQ4s1c",
+                sourceId = "ytmusic",
+                title = "Apostemos Que Me Caso",
+                artistId = "grupo_5",
+                artistName = "Grupo 5",
+                albumId = "apostemos",
+                albumName = "Grandes Éxitos",
+                durationMs = 220000L,
+                artworkUrl = "https://i.ytimg.com/vi/bL18EwQ4s1c/hqdefault.jpg"
             ),
             Track(
                 id = "yt_E7wJTI-1dvQ",
@@ -309,6 +367,17 @@ class HomeViewModel @Inject constructor(
                 artworkUrl = "https://i.ytimg.com/vi/UYk01v661zA/hqdefault.jpg"
             ),
             Track(
+                id = "yt_fV-w75x1k9g",
+                sourceId = "ytmusic",
+                title = "Adiós Amor",
+                artistId = "ke_personajes",
+                artistName = "Ke Personajes",
+                albumId = "adios_amor",
+                albumName = "En Vivo",
+                durationMs = 195000L,
+                artworkUrl = "https://i.ytimg.com/vi/fV-w75x1k9g/hqdefault.jpg"
+            ),
+            Track(
                 id = "yt_k76BgIb89-s",
                 sourceId = "ytmusic",
                 title = "Nunca Es Suficiente",
@@ -318,6 +387,17 @@ class HomeViewModel @Inject constructor(
                 albumName = "Esto Sí Es Cumbia",
                 durationMs = 265000L,
                 artworkUrl = "https://i.ytimg.com/vi/k76BgIb89-s/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_gG08o-M6h_w",
+                sourceId = "ytmusic",
+                title = "Amor A Primera Vista",
+                artistId = "angeles_azules",
+                artistName = "Los Ángeles Azules",
+                albumId = "amor_primera_vista",
+                albumName = "De Buenos Aires Para El Mundo",
+                durationMs = 221000L,
+                artworkUrl = "https://i.ytimg.com/vi/gG08o-M6h_w/hqdefault.jpg"
             ),
             Track(
                 id = "yt_MSFR0st6yJM",
@@ -341,8 +421,53 @@ class HomeViewModel @Inject constructor(
                 durationMs = 240000L,
                 artworkUrl = "https://i.ytimg.com/vi/ROA6lTFZTbA/hqdefault.jpg"
             ),
+            Track(
+                id = "yt_xG8_l7M4k58",
+                sourceId = "ytmusic",
+                title = "Díganle",
+                artistId = "corazon_serrano",
+                artistName = "Corazón Serrano",
+                albumId = "diganle",
+                albumName = "Grandes Éxitos",
+                durationMs = 235000L,
+                artworkUrl = "https://i.ytimg.com/vi/xG8_l7M4k58/hqdefault.jpg"
+            )
+        )
 
-            // Rock & Pop
+        val ROCK_POP_TRACKS = listOf(
+            Track(
+                id = "yt_T_FkEw27XJ0",
+                sourceId = "ytmusic",
+                title = "De Música Ligera",
+                artistId = "soda_stereo",
+                artistName = "Soda Stereo",
+                albumId = "cancion_animal",
+                albumName = "Canción Animal",
+                durationMs = 212000L,
+                artworkUrl = "https://i.ytimg.com/vi/T_FkEw27XJ0/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_k5v3h7f9x2w",
+                sourceId = "ytmusic",
+                title = "Lamento Boliviano",
+                artistId = "enanitos_verdes",
+                artistName = "Los Enanitos Verdes",
+                albumId = "big_bang",
+                albumName = "Big Bang",
+                durationMs = 224000L,
+                artworkUrl = "https://i.ytimg.com/vi/k5v3h7f9x2w/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_c8_v2k4f7mA",
+                sourceId = "ytmusic",
+                title = "Oye Mi Amor",
+                artistId = "mana",
+                artistName = "Maná",
+                albumId = "donde_jugaran",
+                albumName = "¿Dónde Jugarán Los Niños?",
+                durationMs = 273000L,
+                artworkUrl = "https://i.ytimg.com/vi/c8_v2k4f7mA/hqdefault.jpg"
+            ),
             Track(
                 id = "yt_dvgZkm1xWPE",
                 sourceId = "ytmusic",
@@ -377,15 +502,15 @@ class HomeViewModel @Inject constructor(
                 artworkUrl = "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg"
             ),
             Track(
-                id = "yt_T_FkEw27XJ0",
+                id = "yt_HgzGwKwLmgM",
                 sourceId = "ytmusic",
-                title = "De Música Ligera",
-                artistId = "soda_stereo",
-                artistName = "Soda Stereo",
-                albumId = "cancion_animal",
-                albumName = "Canción Animal",
-                durationMs = 212000L,
-                artworkUrl = "https://i.ytimg.com/vi/T_FkEw27XJ0/hqdefault.jpg"
+                title = "Don't Stop Me Now",
+                artistId = "queen",
+                artistName = "Queen",
+                albumId = "jazz",
+                albumName = "Jazz",
+                durationMs = 209000L,
+                artworkUrl = "https://i.ytimg.com/vi/HgzGwKwLmgM/hqdefault.jpg"
             ),
             Track(
                 id = "yt_7wtfhZwyrcc",
@@ -463,9 +588,10 @@ class HomeViewModel @Inject constructor(
                 albumName = "Short n' Sweet",
                 durationMs = 175000L,
                 artworkUrl = "https://i.ytimg.com/vi/eVli-tstM5E/hqdefault.jpg"
-            ),
+            )
+        )
 
-            // Urbano
+        val URBAN_TRACKS = listOf(
             Track(
                 id = "yt_QpKkNIT84GY",
                 sourceId = "ytmusic",
@@ -476,6 +602,17 @@ class HomeViewModel @Inject constructor(
                 albumName = "Un Verano Sin Ti",
                 durationMs = 243000L,
                 artworkUrl = "https://i.ytimg.com/vi/QpKkNIT84GY/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_saGYMhApaH8",
+                sourceId = "ytmusic",
+                title = "Me Porto Bonito",
+                artistId = "bad_bunny",
+                artistName = "Bad Bunny",
+                albumId = "un_verano_sin_ti",
+                albumName = "Un Verano Sin Ti",
+                durationMs = 178000L,
+                artworkUrl = "https://i.ytimg.com/vi/saGYMhApaH8/hqdefault.jpg"
             ),
             Track(
                 id = "yt_QCZZwZQ4qNs",
@@ -489,6 +626,17 @@ class HomeViewModel @Inject constructor(
                 artworkUrl = "https://i.ytimg.com/vi/QCZZwZQ4qNs/hqdefault.jpg"
             ),
             Track(
+                id = "yt_ca48oMV5GwY",
+                sourceId = "ytmusic",
+                title = "Provenza",
+                artistId = "karol_g",
+                artistName = "Karol G",
+                albumId = "manana_sera_bonito",
+                albumName = "Mañana Será Bonito",
+                durationMs = 210000L,
+                artworkUrl = "https://i.ytimg.com/vi/ca48oMV5GwY/hqdefault.jpg"
+            ),
+            Track(
                 id = "yt_ZA7ZKB8Mo9k",
                 sourceId = "ytmusic",
                 title = "LUNA",
@@ -498,7 +646,42 @@ class HomeViewModel @Inject constructor(
                 albumName = "FERXXOCALIPSIS",
                 durationMs = 196000L,
                 artworkUrl = "https://i.ytimg.com/vi/ZA7ZKB8Mo9k/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_c4_z9x1k2bA",
+                sourceId = "ytmusic",
+                title = "Feliz Cumpleaños Ferxxo",
+                artistId = "feid",
+                artistName = "Feid",
+                albumId = "feliz_cumpleanos",
+                albumName = "Feliz Cumpleaños Ferxxo",
+                durationMs = 156000L,
+                artworkUrl = "https://i.ytimg.com/vi/c4_z9x1k2bA/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_A_g3lMcWUCE",
+                sourceId = "ytmusic",
+                title = "Quédate (Bzrp Music Sessions #52)",
+                artistId = "bizarrap",
+                artistName = "Bizarrap & Quevedo",
+                albumId = "bzrp_52",
+                albumName = "Quédate",
+                durationMs = 198000L,
+                artworkUrl = "https://i.ytimg.com/vi/A_g3lMcWUCE/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_TIW_y3z8s70",
+                sourceId = "ytmusic",
+                title = "La Bachata",
+                artistId = "manuel_turizo",
+                artistName = "Manuel Turizo",
+                albumId = "2000",
+                albumName = "2000",
+                durationMs = 162000L,
+                artworkUrl = "https://i.ytimg.com/vi/TIW_y3z8s70/hqdefault.jpg"
             )
         )
+
+        val STARTER_TRACKS = CUMBIA_TRACKS + ROCK_POP_TRACKS + URBAN_TRACKS
     }
 }

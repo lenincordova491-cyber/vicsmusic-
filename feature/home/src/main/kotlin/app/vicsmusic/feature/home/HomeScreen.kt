@@ -288,7 +288,64 @@ fun HomeScreen(
                 }
             }
 
-            // 7. Podcasts Empty State
+            // 7. "Cumbia y Fiesta" Carousel
+            if (uiState.cumbiaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Cumbia y Fiesta")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.cumbiaTracks, key = { "cumbia_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.cumbiaTracks) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 8. "Rock & Pop Clásicos" Carousel
+            if (uiState.rockPopTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Rock y Pop Clásicos")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.rockPopTracks, key = { "rock_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.rockPopTracks) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 9. "Urbano & Pop Latino" Carousel
+            if (uiState.urbanTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Urbano y Tendencias")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.urbanTracks, key = { "urban_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.urbanTracks) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 10. Podcasts Empty State
             if (uiState.selectedFilter == HomeCategoryFilter.PODCASTS) {
                 item {
                     EmptyContent(

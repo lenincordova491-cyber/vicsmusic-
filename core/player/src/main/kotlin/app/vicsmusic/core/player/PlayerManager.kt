@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Random
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -143,12 +144,17 @@ class PlayerManager @Inject constructor(
         val index = queueManager.state.value.items.indexOfFirst { it.id == track.id }
         if (index != -1) {
             playTrackAtIndex(index)
+            triggerAutoplay(track, autoPlayNext = false)
         }
     }
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
         queueManager.setQueue(tracks, startIndex)
         playTrackAtIndex(startIndex)
+        val current = queueManager.state.value.currentTrack
+        if (current != null && tracks.size < 20) {
+            triggerAutoplay(current, autoPlayNext = false)
+        }
     }
 
     fun playTrackAtIndex(index: Int) {
@@ -167,6 +173,13 @@ class PlayerManager @Inject constructor(
             positionMs = 0L,
             durationMs = track.durationMs
         )
+
+        // Seamless queue lookahead: if fewer than 5 tracks remain ahead in queue, prefetch autoplay
+        val qState = queueManager.state.value
+        val remaining = qState.items.size - (qState.currentIndex + 1)
+        if (remaining < 5 && qState.repeatMode == RepeatMode.OFF) {
+            triggerAutoplay(track, autoPlayNext = false)
+        }
 
         scope.launch {
             val streamResult = musicRepository.getStreamInfo(track.id, AudioQuality.HIGH)
@@ -241,14 +254,11 @@ class PlayerManager @Inject constructor(
             val current = _playbackState.value.currentTrack
             if (current != null && queueManager.state.value.repeatMode == RepeatMode.OFF) {
                 triggerAutoplay(current, autoPlayNext = true)
-            } else {
-                exoPlayer.stop()
-                audioFocusManager.abandonAudioFocus()
-                _playbackState.value = _playbackState.value.copy(
-                    status = PlaybackStatus.IDLE,
-                    currentTrack = null,
-                    positionMs = 0L
-                )
+            } else if (queueManager.state.value.repeatMode == RepeatMode.ALL) {
+                val loopTrack = queueManager.skipToIndex(0)
+                if (loopTrack != null) {
+                    prepareAndPlay(loopTrack)
+                }
             }
         }
     }
@@ -261,13 +271,10 @@ class PlayerManager @Inject constructor(
                 val prefs = userPreferencesRepository.userPreferences.first()
                 if (!prefs.isAutoplayEnabled) {
                     if (autoPlayNext) {
-                        exoPlayer.stop()
-                        audioFocusManager.abandonAudioFocus()
-                        _playbackState.value = _playbackState.value.copy(
-                            status = PlaybackStatus.IDLE,
-                            currentTrack = null,
-                            positionMs = 0L
-                        )
+                        val loopTrack = queueManager.skipToIndex(0)
+                        if (loopTrack != null) {
+                            prepareAndPlay(loopTrack)
+                        }
                     }
                     return@launch
                 }
@@ -286,15 +293,25 @@ class PlayerManager @Inject constructor(
                 }
 
                 val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
-                val autoplayList = recommendationEngine.computeAutoplayQueue(
+                var autoplayList = recommendationEngine.computeAutoplayQueue(
                     currentTrack = current,
                     allAvailableTracks = candidateTracks,
                     listeningHistory = listeningEvents,
                     favoriteArtistNames = prefs.favoriteArtistIds,
                     favoriteTrackIds = candidateTracks.filter { it.isLiked }.map { it.id }.toSet(),
                     excludedTrackIds = currentQueueIds,
-                    count = 6
+                    count = 10
                 )
+
+                // Guaranteed fallback pool: ensure autoplay queue never starves
+                if (autoplayList.isEmpty()) {
+                    val fallbackPool = (candidateTracks + allTracks)
+                        .filter { it.id != current.id && !currentQueueIds.contains(it.id) }
+                        .ifEmpty { (candidateTracks + allTracks).filter { it.id != current.id } }
+                    if (fallbackPool.isNotEmpty()) {
+                        autoplayList = fallbackPool.shuffled(Random(System.currentTimeMillis())).take(10)
+                    }
+                }
 
                 if (autoplayList.isNotEmpty()) {
                     queueManager.appendAutoplayTracks(autoplayList)
@@ -305,23 +322,17 @@ class PlayerManager @Inject constructor(
                         }
                     }
                 } else if (autoPlayNext) {
-                    exoPlayer.stop()
-                    audioFocusManager.abandonAudioFocus()
-                    _playbackState.value = _playbackState.value.copy(
-                        status = PlaybackStatus.IDLE,
-                        currentTrack = null,
-                        positionMs = 0L
-                    )
+                    val loopTrack = queueManager.skipToIndex(0)
+                    if (loopTrack != null) {
+                        prepareAndPlay(loopTrack)
+                    }
                 }
             } catch (_: Exception) {
                 if (autoPlayNext) {
-                    exoPlayer.stop()
-                    audioFocusManager.abandonAudioFocus()
-                    _playbackState.value = _playbackState.value.copy(
-                        status = PlaybackStatus.IDLE,
-                        currentTrack = null,
-                        positionMs = 0L
-                    )
+                    val loopTrack = queueManager.skipToIndex(0)
+                    if (loopTrack != null) {
+                        prepareAndPlay(loopTrack)
+                    }
                 }
             } finally {
                 isAutoplayFetching = false

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,6 +87,17 @@ fun TrackRow(
                     color = VicsTextSecondaryDark,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (track.isLiked) {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = "Favorito",
+                    tint = Color(0xFFEF4444),
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .size(18.dp)
                 )
             }
 

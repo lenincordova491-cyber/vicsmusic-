@@ -277,11 +277,11 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun toggleTrackLike(track: Track): Result<Boolean> = withContext(ioDispatcher) {
         runCatching {
             val current = trackDao.getTrack(track.id).firstOrNull()
-            val newLikedStatus = if (current != null) !current.isLiked else true
+            val newLikedStatus = if (current != null) !current.isLiked else (!track.isLiked)
             val updatedEntity = if (current != null) {
                 current.copy(isLiked = newLikedStatus)
             } else {
-                track.asEntity().copy(isLiked = true)
+                track.asEntity().copy(isLiked = newLikedStatus)
             }
             trackDao.upsertTrack(updatedEntity)
             newLikedStatus
@@ -316,8 +316,22 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
-            trackDao.deleteTracksBySource("local")
-            trackDao.upsertTracks(tracks.map { it.asEntity() })
+            val existingTracks = trackDao.getAllTracks().firstOrNull().orEmpty().associateBy { it.id }
+            val entitiesToUpsert = tracks.map { track ->
+                val existing = existingTracks[track.id]
+                if (existing != null) {
+                    existing.copy(
+                        title = track.title,
+                        artistName = track.artistName,
+                        albumName = track.albumName,
+                        artworkUrl = track.artworkUrl ?: existing.artworkUrl,
+                        durationMs = if (track.durationMs > 0) track.durationMs else existing.durationMs
+                    )
+                } else {
+                    track.asEntity()
+                }
+            }
+            trackDao.upsertTracks(entitiesToUpsert)
         }
     }
 

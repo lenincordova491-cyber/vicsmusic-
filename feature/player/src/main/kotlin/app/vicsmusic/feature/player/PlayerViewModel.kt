@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,14 +69,17 @@ class PlayerViewModel @Inject constructor(
             playbackState
                 .map { it.currentTrack?.id }
                 .distinctUntilChanged()
-                .collect { trackId ->
+                .flatMapLatest { trackId ->
                     if (trackId != null) {
-                        musicRepository.getTrack(trackId).collect { dbTrack ->
-                            if (dbTrack != null && playbackState.value.currentTrack?.id == trackId) {
-                                if (playbackState.value.currentTrack?.isLiked != dbTrack.isLiked) {
-                                    playbackConnection.updateTrackLiked(trackId, dbTrack.isLiked)
-                                }
-                            }
+                        musicRepository.getTrack(trackId)
+                    } else {
+                        flowOf(null)
+                    }
+                }
+                .collect { dbTrack ->
+                    if (dbTrack != null && playbackState.value.currentTrack?.id == dbTrack.id) {
+                        if (playbackState.value.currentTrack?.isLiked != dbTrack.isLiked) {
+                            playbackConnection.updateTrackLiked(dbTrack.id, dbTrack.isLiked)
                         }
                     }
                 }

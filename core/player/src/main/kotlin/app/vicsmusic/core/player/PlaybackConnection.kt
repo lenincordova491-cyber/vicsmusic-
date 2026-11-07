@@ -48,19 +48,32 @@ class PlaybackConnection @Inject constructor(
         )
     }
 
+    private fun startPlaybackService() {
+        try {
+            val intent = android.content.Intent(context, PlaybackService::class.java)
+            context.startService(intent)
+        } catch (_: Exception) {
+            // Android 14+ background start limitations
+        }
+    }
+
     fun playTrack(track: Track) {
+        startPlaybackService()
         playerManager.playTrack(track)
     }
 
     fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
+        startPlaybackService()
         playerManager.playQueue(tracks, startIndex)
     }
 
     fun playTrackAtIndex(index: Int) {
+        startPlaybackService()
         playerManager.playTrackAtIndex(index)
     }
 
     fun play() {
+        startPlaybackService()
         playerManager.play()
     }
 

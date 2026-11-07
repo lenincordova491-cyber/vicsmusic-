@@ -52,8 +52,7 @@ class PlayerCacheManager @Inject constructor(
     }
 
     fun release() {
-        runCatching {
-            simpleCache.release()
-        }
+        // SimpleCache is maintained for the application process lifetime.
+        // Releasing it on transient service stops causes IllegalStateException when player resumes.
     }
 }

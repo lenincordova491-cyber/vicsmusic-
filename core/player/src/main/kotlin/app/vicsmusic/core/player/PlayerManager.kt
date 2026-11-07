@@ -50,7 +50,21 @@ class PlayerManager @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
 
-    val exoPlayer: ExoPlayer by lazy {
+    @Volatile
+    private var _exoPlayer: ExoPlayer? = null
+
+    val exoPlayer: ExoPlayer
+        get() {
+            val existing = _exoPlayer
+            if (existing != null) {
+                return existing
+            }
+            return synchronized(this) {
+                _exoPlayer ?: createExoPlayer().also { _exoPlayer = it }
+            }
+        }
+
+    private fun createExoPlayer(): ExoPlayer {
         val cacheDataSourceFactory = playerCacheManager.createCacheDataSourceFactory()
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(cacheDataSourceFactory)
@@ -60,10 +74,10 @@ class PlayerManager @Inject constructor(
             .setUsage(C.USAGE_MEDIA)
             .build()
 
-        ExoPlayer.Builder(context)
+        return ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
-            .setAudioAttributes(audioAttributes, false) // We handle audio focus explicitly
-            .setHandleAudioBecomingNoisy(false) // Handled in AudioFocusManager
+            .setAudioAttributes(audioAttributes, true) // Built-in audio focus handling
+            .setHandleAudioBecomingNoisy(true) // Pauses automatically on headphone disconnect
             .build()
             .apply {
                 repeatMode = Player.REPEAT_MODE_OFF
@@ -113,6 +127,7 @@ class PlayerManager @Inject constructor(
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            android.util.Log.e("PlayerManager", "ExoPlayer error [${error.errorCodeName} / ${error.errorCode}]: ${error.message}", error)
             consecutiveErrorCount++
             _playbackState.value = _playbackState.value.copy(
                 status = PlaybackStatus.ERROR,
@@ -163,9 +178,7 @@ class PlayerManager @Inject constructor(
     }
 
     private fun prepareAndPlay(track: Track) {
-        if (!audioFocusManager.requestAudioFocus()) {
-            return
-        }
+        audioFocusManager.requestAudioFocus()
 
         _playbackState.value = _playbackState.value.copy(
             status = PlaybackStatus.BUFFERING,
@@ -203,23 +216,25 @@ class PlayerManager @Inject constructor(
                     .setMediaMetadata(metadata)
                     .build()
 
-                exoPlayer.setMediaItem(mediaItem)
-                exoPlayer.prepare()
-                exoPlayer.play()
+                val player = exoPlayer
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.play()
             }.onFailure { error ->
+                android.util.Log.e("PlayerManager", "Stream extraction failed for ${track.id}: ${error.message}", error)
                 _playbackState.value = _playbackState.value.copy(
                     status = PlaybackStatus.ERROR,
-                    errorMessage = error.localizedMessage
+                    errorMessage = error.localizedMessage ?: "Error cargando streaming de audio"
                 )
             }
         }
     }
 
     fun play() {
-        if (!exoPlayer.isPlaying) {
-            if (audioFocusManager.requestAudioFocus()) {
-                exoPlayer.play()
-            }
+        val player = exoPlayer
+        if (!player.isPlaying) {
+            audioFocusManager.requestAudioFocus()
+            player.play()
         }
     }
 
@@ -434,8 +449,10 @@ class PlayerManager @Inject constructor(
     fun release() {
         stopProgressTracker()
         audioFocusManager.abandonAudioFocus()
-        exoPlayer.removeListener(playerListener)
-        exoPlayer.release()
-        playerCacheManager.release()
+        _exoPlayer?.run {
+            removeListener(playerListener)
+            release()
+        }
+        _exoPlayer = null
     }
 }

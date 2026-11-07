@@ -121,11 +121,9 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         mediaLibrarySession?.run {
-            player.release()
             release()
             mediaLibrarySession = null
         }
-        playerManager.release()
         super.onDestroy()
     }
 

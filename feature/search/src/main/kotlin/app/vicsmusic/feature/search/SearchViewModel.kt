@@ -140,8 +140,14 @@ class SearchViewModel @Inject constructor(
         return when (filter) {
             SearchFilter.ALL -> tracks
             SearchFilter.TRACKS -> tracks
-            SearchFilter.ARTISTS -> tracks.filter { it.artistName.lowercase().contains(query) }
-            SearchFilter.ALBUMS -> tracks.filter { it.albumName?.lowercase()?.contains(query) == true }
+            SearchFilter.ARTISTS -> {
+                val matched = tracks.filter { it.artistName.lowercase().contains(query) }
+                matched.ifEmpty { tracks }
+            }
+            SearchFilter.ALBUMS -> {
+                val matched = tracks.filter { it.albumName?.lowercase()?.contains(query) == true }
+                matched.ifEmpty { tracks }
+            }
         }
     }
 

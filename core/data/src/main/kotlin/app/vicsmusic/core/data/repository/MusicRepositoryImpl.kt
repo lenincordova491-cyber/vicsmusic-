@@ -12,7 +12,9 @@ import app.vicsmusic.core.database.entity.PlayHistoryEntity
 import app.vicsmusic.core.database.entity.SearchHistoryEntity
 import app.vicsmusic.core.database.model.asEntity
 import app.vicsmusic.core.database.model.asExternalModel
+import app.vicsmusic.core.domain.engine.AdvancedSearchEngine
 import app.vicsmusic.core.domain.engine.ListeningEvent
+import app.vicsmusic.core.domain.engine.LyricMatchHint
 import app.vicsmusic.core.domain.repository.MusicRepository
 import app.vicsmusic.core.model.AudioQuality
 import app.vicsmusic.core.model.DownloadStatus
@@ -32,6 +34,8 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -102,6 +106,8 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    private val advancedSearchEngine = AdvancedSearchEngine()
+
     override suspend fun searchTracks(query: String): Result<List<Track>> = withContext(ioDispatcher) {
         runCatching {
             val clean = query.trim()
@@ -110,22 +116,84 @@ class MusicRepositoryImpl @Inject constructor(
             // 1. Guardar historial
             runCatching { searchHistoryDao.insertSearch(SearchHistoryEntity(clean, System.currentTimeMillis())) }
 
-            // 2. Buscar en local
-            val local = trackDao.searchTracks(clean).firstOrNull()?.map { it.asExternalModel() }.orEmpty()
+            // 2. Buscar en catálogo local y letras cacheadas en Room
+            val directLocal = trackDao.searchTracks(clean).firstOrNull()?.map { it.asExternalModel() }.orEmpty()
+                .filter { it.sourceId != "local" }
+            val allCatalogOnline = trackDao.getAllTracks().firstOrNull()?.map { it.asExternalModel() }.orEmpty()
+                .filter { it.sourceId != "local" }
+            val cachedLyricMatchIds = runCatching {
+                lyricsDao.searchCachedLyrics(clean).map { it.trackId }.toSet()
+            }.getOrDefault(emptySet())
+            val cachedLyricTracks = allCatalogOnline.filter { cachedLyricMatchIds.contains(it.id) }
 
-            // 3. Buscar SIEMPRE en remoto (sin cortocircuito)
-            val remote = mutableListOf<Track>()
-            for (source in sourceRegistry.getAllSources()) {
-                source.search(clean, SearchType.TRACKS, 1).getOrNull()?.let {
-                    remote.addAll(it.items)
+            // 3. Búsqueda paralela multi-señal: Catálogo remoto + Índice global de Letras (LRCLIB + YouTube Lyric Index)
+            val isLyricLike = advancedSearchEngine.isLikelyLyricQuery(clean)
+            val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID)
+
+            val (remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
+                val directDeferred = async {
+                    val items = mutableListOf<Track>()
+                    for (source in sourceRegistry.getAllSources()) {
+                        if (source is LocalMusicSource) continue
+                        source.search(clean, SearchType.TRACKS, 1).getOrNull()?.let {
+                            items.addAll(it.items.filter { t -> t.sourceId != "local" })
+                        }
+                    }
+                    items
+                }
+
+                val lrclibDeferred = async {
+                    if (clean.length >= 4) {
+                        lrclibClient.searchSongsByLyricPhrase(clean, limit = 4)
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                val ytLyricDeferred = async {
+                    if (isLyricLike && ytSource != null && !clean.lowercase().contains("letra")) {
+                        ytSource.search("$clean letra", SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                    } else {
+                        emptyList()
+                    }
+                }
+
+                Triple(directDeferred.await(), lrclibDeferred.await(), ytLyricDeferred.await())
+            }
+
+            // 4. Si LRCLIB identificó canciones exactas por un fragmento de letra que no están en los resultados directos,
+            // resolverlas inmediatamente en YouTube Music para que el usuario pueda reproducirlas al instante
+            val resolvedLyricTracks = mutableListOf<Track>()
+            if (ytSource != null && lrclibCandidates.isNotEmpty()) {
+                val topHintsToResolve = lrclibCandidates.take(2).filter { candidate ->
+                    val normCandTitle = advancedSearchEngine.normalize(candidate.trackName)
+                    remoteDirect.none { advancedSearchEngine.normalize(it.title).contains(normCandTitle) }
+                }
+                coroutineScope {
+                    val jobs = topHintsToResolve.map { cand ->
+                        async {
+                            ytSource.search("${cand.trackName} ${cand.artistName}", SearchType.TRACKS, 1)
+                                .getOrNull()?.items?.take(2).orEmpty()
+                        }
+                    }
+                    jobs.forEach { resolvedLyricTracks.addAll(it.await()) }
                 }
             }
 
-            if (remote.isNotEmpty()) {
-                trackDao.upsertTracks(remote.map { it.asEntity() })
+            val allRemote = (remoteDirect + remoteLyricSearch + resolvedLyricTracks).distinctBy { it.id }
+            if (allRemote.isNotEmpty()) {
+                trackDao.upsertTracks(allRemote.map { it.asEntity() })
             }
 
-            (local + remote).distinctBy { it.id }
+            val lyricHints = lrclibCandidates.map { LyricMatchHint(it.trackName, it.artistName) }
+            val candidates = (directLocal + cachedLyricTracks + allRemote).distinctBy { it.id }
+
+            advancedSearchEngine.rankSearchResults(
+                rawQuery = clean,
+                candidates = candidates,
+                lyricHints = lyricHints,
+                cachedLyricMatchTrackIds = cachedLyricMatchIds
+            )
         }
     }
 
@@ -228,11 +296,16 @@ class MusicRepositoryImpl @Inject constructor(
         runCatching {
             val cached = lyricsDao.getLyrics(track.id).firstOrNull()
             if (cached != null && cached.content.isNotBlank()) {
-                return@runCatching LrcParser.parse(
+                val parsed = LrcParser.parse(
                     trackId = track.id,
                     lrcContent = cached.content,
-                    source = cached.source
+                    plainLyrics = cached.content,
+                    source = cached.source,
+                    durationMs = track.durationMs
                 )
+                if (parsed.lines.isNotEmpty()) {
+                    return@runCatching parsed
+                }
             }
 
             val durationSec = (track.durationMs / 1000).toInt().takeIf { it > 0 }
@@ -244,7 +317,8 @@ class MusicRepositoryImpl @Inject constructor(
                 albumName = track.albumName
             ).getOrNull() ?: lrclibClient.searchLyrics(
                 trackId = track.id,
-                query = "${track.title} ${track.artistName}"
+                query = "${track.title} ${track.artistName}",
+                durationMs = track.durationMs
             ).getOrNull()
 
             if (fetched != null && fetched.lines.isNotEmpty()) {

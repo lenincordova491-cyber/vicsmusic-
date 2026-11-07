@@ -76,7 +76,7 @@ fun SearchScreen(
         OutlinedTextField(
             value = uiState.query,
             onValueChange = onQueryChange,
-            placeholder = { Text(stringResource(R.string.search_placeholder)) },
+            placeholder = { Text("Canción, artista o fragmento de letra...") },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
@@ -180,6 +180,38 @@ fun SearchScreen(
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
                     item {
+                        Text(
+                            text = "Búsqueda inteligente por letra o título",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        )
+                        Text(
+                            text = "¿No recuerdas el nombre de la canción? Escribe una frase de la letra y el motor la identificará automáticamente.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        val sampleLyricQueries = listOf(
+                            "de aquel amor de musica ligera",
+                            "olvidala mejor olvidala",
+                            "motor y motivo",
+                            "lamento boliviano"
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        ) {
+                            items(sampleLyricQueries) { lyricSample ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onQueryChange(lyricSample) },
+                                    label = { Text("♪ \"$lyricSample\"") }
+                                )
+                            }
+                        }
+
                         Text(
                             text = "Explorar catálogo y fuentes",
                             style = MaterialTheme.typography.titleLarge,

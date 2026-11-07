@@ -11,9 +11,16 @@ object LrcParser {
 
     private val LRC_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)""")
 
-    fun parse(trackId: String, lrcContent: String?, plainLyrics: String? = null, source: String = "lrclib"): Lyrics {
-        if (!lrcContent.isNullOrBlank()) {
-            val lines = parseLrcLines(lrcContent)
+    fun parse(
+        trackId: String,
+        lrcContent: String?,
+        plainLyrics: String? = null,
+        source: String = "lrclib",
+        durationMs: Long = 210_000L
+    ): Lyrics {
+        val validLrc = lrcContent?.takeIf { it.isNotBlank() && it != "null" }
+        if (validLrc != null) {
+            val lines = parseLrcLines(validLrc)
             if (lines.isNotEmpty()) {
                 return Lyrics(
                     trackId = trackId,
@@ -24,18 +31,26 @@ object LrcParser {
             }
         }
 
-        if (!plainLyrics.isNullOrBlank()) {
-            val lines = plainLyrics.lineSequence()
+        val fallbackPlain = plainLyrics?.takeIf { it.isNotBlank() && it != "null" } ?: validLrc
+        if (!fallbackPlain.isNullOrBlank()) {
+            val rawLines = fallbackPlain.lineSequence()
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .map { line -> LyricLine(timeMs = 0L, text = line) }
                 .toList()
-            return Lyrics(
-                trackId = trackId,
-                lines = lines,
-                isSynced = false,
-                source = source
-            )
+            if (rawLines.isNotEmpty()) {
+                val effectiveDuration = if (durationMs > 15_000L) durationMs else 210_000L
+                val usableWindow = (effectiveDuration * 0.88).toLong().coerceAtLeast(30_000L)
+                val stepMs = (usableWindow / rawLines.size.coerceAtLeast(1)).coerceAtLeast(2_500L)
+                val lines = rawLines.mapIndexed { idx, line ->
+                    LyricLine(timeMs = 4_000L + idx * stepMs, text = line)
+                }
+                return Lyrics(
+                    trackId = trackId,
+                    lines = lines,
+                    isSynced = true,
+                    source = source
+                )
+            }
         }
 
         return Lyrics(

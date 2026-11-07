@@ -21,7 +21,6 @@ import app.vicsmusic.core.model.PlaybackStatus
 import app.vicsmusic.core.model.RepeatMode
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.player.cache.PlayerCacheManager
-import app.vicsmusic.core.player.focus.AudioFocusManager
 import app.vicsmusic.core.player.queue.QueueManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -80,17 +79,14 @@ class PlayerManager @Inject constructor(
             .setHandleAudioBecomingNoisy(true) // Pauses automatically on headphone disconnect
             .build()
             .apply {
+                trackSelectionParameters = trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+                    .build()
                 repeatMode = Player.REPEAT_MODE_OFF
                 addListener(playerListener)
             }
     }
-
-    private val audioFocusManager = AudioFocusManager(
-        context = context,
-        onPause = { pause() },
-        onResume = { play() },
-        onSetVolume = { volume -> exoPlayer.volume = volume }
-    )
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -177,8 +173,20 @@ class PlayerManager @Inject constructor(
         prepareAndPlay(track)
     }
 
+    private fun recordCurrentTrackFeedback() {
+        val prevTrack = _playbackState.value.currentTrack ?: return
+        val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val dur = (if (exoPlayer.duration > 0) exoPlayer.duration else prevTrack.durationMs).coerceAtLeast(1L)
+        if (pos > 2_000L) {
+            val completion = (pos.toFloat() / dur.toFloat()).coerceIn(0.05f, 1.0f)
+            scope.launch {
+                runCatching { musicRepository.recordPlayHistory(prevTrack.id, completion) }
+            }
+        }
+    }
+
     private fun prepareAndPlay(track: Track) {
-        audioFocusManager.requestAudioFocus()
+        recordCurrentTrackFeedback()
 
         _playbackState.value = _playbackState.value.copy(
             status = PlaybackStatus.BUFFERING,
@@ -222,6 +230,7 @@ class PlayerManager @Inject constructor(
                 val player = exoPlayer
                 player.setMediaItem(mediaItem)
                 player.prepare()
+                player.playWhenReady = true
                 player.play()
             }.onFailure { error ->
                 android.util.Log.e("PlayerManager", "Stream extraction failed for ${track.id}: ${error.message}", error)
@@ -235,21 +244,32 @@ class PlayerManager @Inject constructor(
 
     fun play() {
         val player = exoPlayer
-        if (!player.isPlaying) {
-            audioFocusManager.requestAudioFocus()
-            player.play()
+        if (player.playbackState == Player.STATE_IDLE) {
+            val currentTrack = _playbackState.value.currentTrack ?: queueManager.state.value.currentTrack
+            if (player.mediaItemCount == 0 && currentTrack != null) {
+                prepareAndPlay(currentTrack)
+                return
+            }
+            player.prepare()
+        } else if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(0L)
         }
+        player.playWhenReady = true
+        player.play()
+        updatePlaybackState()
     }
 
     fun pause() {
-        if (exoPlayer.isPlaying) {
-            exoPlayer.pause()
-            persistCurrentPosition()
-        }
+        val player = exoPlayer
+        player.playWhenReady = false
+        player.pause()
+        persistCurrentPosition()
+        updatePlaybackState()
     }
 
     fun togglePlayPause() {
-        if (exoPlayer.isPlaying) {
+        val player = exoPlayer
+        if (player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)) {
             pause()
         } else {
             play()
@@ -461,7 +481,6 @@ class PlayerManager @Inject constructor(
 
     fun release() {
         stopProgressTracker()
-        audioFocusManager.abandonAudioFocus()
         _exoPlayer?.run {
             removeListener(playerListener)
             release()

@@ -160,7 +160,7 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Spotify Category Filter Chips ("Todos", "Música", "En el dispositivo", "Descargas", "Podcasts")
+            // 2. Spotify Category Filter Chips ("Todos", "Música", "Descargas", "Podcasts")
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -175,16 +175,9 @@ fun HomeScreen(
                     }
                     item {
                         SpotifyFilterChip(
-                            label = "Música Online",
+                            label = "Música",
                             selected = uiState.selectedFilter == HomeCategoryFilter.MUSIC,
                             onClick = { onFilterSelected(HomeCategoryFilter.MUSIC) }
-                        )
-                    }
-                    item {
-                        SpotifyFilterChip(
-                            label = "En el dispositivo (${uiState.localTracks.size})",
-                            selected = uiState.selectedFilter == HomeCategoryFilter.LOCAL,
-                            onClick = { onFilterSelected(HomeCategoryFilter.LOCAL) }
                         )
                     }
                     item {
@@ -257,10 +250,17 @@ fun HomeScreen(
                 }
             }
 
-            // 5. "Recomendado para ti" (Adaptive Taste Carousel)
+            // 5. "Tu Mix Diario" + "Descubrimiento según tu gusto" (Adaptive Taste Carousels)
             if (uiState.dailyMix.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item {
                     SectionHeader(title = "Recomendado para ti")
+                    Text(
+                        text = uiState.tasteSummaryLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = SpotifyGreen,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
@@ -269,6 +269,24 @@ fun HomeScreen(
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.dailyMix) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (uiState.recommendedTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Descubrimiento según tu gusto")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.recommendedTracks, key = { "rec_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.recommendedTracks) },
                                 onDownloadClick = { onDownloadTrack(track) }
                             )
                         }
@@ -371,30 +389,7 @@ fun HomeScreen(
                 }
             }
 
-            // 10. Archivos Locales del Dispositivo (Separados del streaming online)
-            if (uiState.selectedFilter == HomeCategoryFilter.LOCAL || (uiState.selectedFilter == HomeCategoryFilter.ALL && uiState.localTracks.isNotEmpty())) {
-                item {
-                    SectionHeader(title = "Archivos en tu dispositivo (Música Local)")
-                }
-                if (uiState.localTracks.isEmpty()) {
-                    item {
-                        EmptyContent(
-                            title = "Sin archivos locales detectados",
-                            message = "Tus archivos de audio locales aparecerán aquí sin mezclarse con el catálogo online.",
-                            modifier = Modifier.fillMaxWidth().height(180.dp)
-                        )
-                    }
-                } else {
-                    items(uiState.localTracks, key = { "local_${it.id}" }) { track ->
-                        TrackRow(
-                            track = track,
-                            onClick = { onTrackClick(track, uiState.localTracks) }
-                        )
-                    }
-                }
-            }
-
-            // 11. Podcasts Empty State
+            // 10. Podcasts Empty State
             if (uiState.selectedFilter == HomeCategoryFilter.PODCASTS) {
                 item {
                     EmptyContent(

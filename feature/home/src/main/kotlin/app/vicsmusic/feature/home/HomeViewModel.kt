@@ -24,7 +24,6 @@ import javax.inject.Inject
 enum class HomeCategoryFilter {
     ALL,
     MUSIC,
-    LOCAL,
     PODCASTS,
     DOWNLOADS
 }
@@ -32,6 +31,7 @@ enum class HomeCategoryFilter {
 data class HomeUiState(
     val isLoading: Boolean = true,
     val greeting: String = "Buenas tardes",
+    val tasteSummaryLabel: String = "Algoritmo adaptativo • Personalizado para ti",
     val selectedFilter: HomeCategoryFilter = HomeCategoryFilter.ALL,
     val quickAccessTracks: List<Track> = emptyList(),
     val featuredRelease: Track? = null,
@@ -42,7 +42,6 @@ data class HomeUiState(
     val rockPopTracks: List<Track> = emptyList(),
     val urbanTracks: List<Track> = emptyList(),
     val salsaTracks: List<Track> = emptyList(),
-    val localTracks: List<Track> = emptyList(),
     val downloadedTracks: List<Track> = emptyList(),
     val availableExtensions: List<ExtensionItem> = emptyList(),
     val activeExtensionIds: Set<String> = setOf("ytmusic-spotiflac", "spotify-web", "soundcloud"),
@@ -87,7 +86,6 @@ class HomeViewModel @Inject constructor(
     private fun seedStarterTracks() {
         viewModelScope.launch {
             musicRepository.seedCatalogTracks(STARTER_TRACKS)
-            musicRepository.syncLocalTracks()
         }
     }
 
@@ -117,8 +115,7 @@ class HomeViewModel @Inject constructor(
                 musicRepository.getPlayHistory(50),
                 userPreferencesRepository.userPreferences
             ) { allTracks, downloaded, recents, history, prefs ->
-                // Strictly partition local device tracks from online streaming tracks
-                val deviceLocalTracks = allTracks.filter { it.sourceId == "local" }
+                // Home screen exclusively shows online streaming & downloaded tracks (no local device files)
                 val onlineTracks = allTracks.filter { it.sourceId != "local" && !it.artworkUrl.isNullOrBlank() }
                 val effectiveTracks = (onlineTracks + STARTER_TRACKS).distinctBy { it.id }
                 val likedTrackIds = allTracks.filter { it.isLiked }.map { it.id }.toSet()
@@ -210,6 +207,7 @@ class HomeViewModel @Inject constructor(
 
                 _uiState.value.copy(
                     isLoading = false,
+                    tasteSummaryLabel = recommendations.tasteProfile.tasteSummaryLabel,
                     quickAccessTracks = quickAccess,
                     featuredRelease = hero,
                     dailyMix = (recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.drop(1)).distinctBy { it.id }.take(12),
@@ -219,7 +217,6 @@ class HomeViewModel @Inject constructor(
                     rockPopTracks = rockPop,
                     urbanTracks = urban,
                     salsaTracks = salsa,
-                    localTracks = deviceLocalTracks,
                     downloadedTracks = downloaded,
                     activeExtensionIds = activeSources,
                     isAutoplayEnabled = prefs.isAutoplayEnabled
@@ -293,17 +290,9 @@ class HomeViewModel @Inject constructor(
 
     fun playTrack(track: Track, fromQueue: List<Track> = emptyList()) {
         viewModelScope.launch {
-            musicRepository.recordPlayHistory(track.id, 0.8f)
+            musicRepository.recordPlayHistory(track.id, 0.85f)
         }
-        val isLocal = track.sourceId == "local"
-        if (isLocal) {
-            // Strictly queue only local tracks when playing a local file (never mix remote tracks)
-            val localQueue = fromQueue.filter { it.sourceId == "local" }
-                .ifEmpty { _uiState.value.localTracks }
-                .ifEmpty { listOf(track) }
-            val index = localQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playbackConnection.playQueue(localQueue, index)
-        } else if (fromQueue.isNotEmpty()) {
+        if (fromQueue.isNotEmpty()) {
             val remoteQueue = fromQueue.filter { it.sourceId != "local" }
             val fullQueue = if (remoteQueue.size < 20) {
                 val more = STARTER_TRACKS.filter { cat -> remoteQueue.none { it.id == cat.id } }

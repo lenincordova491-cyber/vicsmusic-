@@ -126,6 +126,20 @@ fun NowPlayingScreen(
 ) {
     val track = playbackState.currentTrack
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showFullScreenLyrics by remember { mutableStateOf(false) }
+
+    val lyricsCardColor = remember(track?.id) {
+        val vibrantPalettes = listOf(
+            Color(0xFF1D4ED8), // Vibrant Electric Blue
+            Color(0xFF15803D), // Vibrant Spotify Emerald
+            Color(0xFF6D28D9), // Vibrant Royal Purple
+            Color(0xFFB91C1C), // Vibrant Crimson Red
+            Color(0xFF0F766E), // Vibrant Deep Teal
+            Color(0xFFB45309)  // Vibrant Warm Amber
+        )
+        val idx = ((track?.id?.hashCode() ?: 0) and 0x7FFFFFFF) % vibrantPalettes.size
+        vibrantPalettes[idx]
+    }
 
     val ambientColors = remember(track?.id) {
         val palettes = listOf(
@@ -421,78 +435,304 @@ fun NowPlayingScreen(
                 }
             }
 
-            // Spotify Synced / Plain Lyrics Card
-            if (lyrics != null && lyrics.lines.isNotEmpty()) {
-                val activeIndex = if (lyrics.isSynced) {
-                    lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }
-                } else {
-                    -1
-                }
-                val listState = rememberLazyListState()
+            // Spotify Professional Synced Karaoke Lyrics Card
+            val hasLyrics = lyrics != null && lyrics.lines.isNotEmpty()
+            val activeIndex = if (hasLyrics && lyrics != null && lyrics.isSynced) {
+                lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }.coerceAtLeast(0)
+            } else {
+                0
+            }
+            val listState = rememberLazyListState()
 
-                LaunchedEffect(activeIndex) {
-                    if (lyrics.isSynced && activeIndex >= 0) {
-                        listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
+            LaunchedEffect(activeIndex, track?.id, hasLyrics) {
+                if (hasLyrics && lyrics != null && lyrics.isSynced && activeIndex >= 0) {
+                    listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = lyricsCardColor),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .padding(bottom = 20.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    lyricsCardColor,
+                                    lyricsCardColor.copy(alpha = 0.85f),
+                                    Color(0xFF181818).copy(alpha = 0.45f)
+                                )
+                            )
+                        )
+                        .padding(20.dp)
+                ) {
+                    // Spotify Lyrics Card Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Letras",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (hasLyrics) "KARAOKE EN TIEMPO REAL • TOCA UN VERSO" else "BUSCANDO LETRA SINCRONIZADA...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.78f),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        if (hasLyrics) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.Black.copy(alpha = 0.32f))
+                                    .clickable { showFullScreenLyrics = true }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) {
+                                Text(
+                                    text = "Pantalla completa",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (hasLyrics && lyrics != null) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            itemsIndexed(lyrics.lines) { index, line ->
+                                val isCurrent = !lyrics.isSynced || index == activeIndex
+                                val isPast = lyrics.isSynced && index < activeIndex
+                                Text(
+                                    text = line.text,
+                                    style = if (isCurrent) {
+                                        MaterialTheme.typography.headlineSmall
+                                    } else {
+                                        MaterialTheme.typography.titleMedium
+                                    },
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = when {
+                                        isCurrent -> Color.White
+                                        isPast -> Color.White.copy(alpha = 0.38f)
+                                        else -> Color.White.copy(alpha = 0.58f)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable(enabled = lyrics.isSynced) { onSeekTo(line.timeMs) }
+                                        .padding(vertical = 2.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "♪ ${track?.title ?: "Reproduciendo"} ♪",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "${track?.artistName ?: ""} • Modo Audio HD",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.72f),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Full-Screen Spotify Karaoke Modal
+    if (showFullScreenLyrics && lyrics != null && lyrics.lines.isNotEmpty()) {
+        val fullSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val activeIdx = if (lyrics.isSynced) {
+            lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }.coerceAtLeast(0)
+        } else {
+            0
+        }
+        val fullListState = rememberLazyListState()
+
+        LaunchedEffect(activeIdx) {
+            if (lyrics.isSynced && activeIdx >= 0) {
+                fullListState.animateScrollToItem((activeIdx - 2).coerceAtLeast(0))
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showFullScreenLyrics = false },
+            sheetState = fullSheetState,
+            containerColor = lyricsCardColor,
+            dragHandle = null
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(lyricsCardColor, lyricsCardColor.copy(alpha = 0.9f), Color(0xFF121212))
+                        )
+                    )
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
+            ) {
+                // Top Header inside Full-Screen Lyrics
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = track?.title ?: "Canción actual",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track?.artistName ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(
+                        onClick = { showFullScreenLyrics = false },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.3f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cerrar letras",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                // Full-screen scrolling Karaoke verses
+                LazyColumn(
+                    state = fullListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    itemsIndexed(lyrics.lines) { index, line ->
+                        val isCurrent = !lyrics.isSynced || index == activeIdx
+                        val isPast = lyrics.isSynced && index < activeIdx
+                        Text(
+                            text = line.text,
+                            style = if (isCurrent) {
+                                MaterialTheme.typography.headlineMedium
+                            } else {
+                                MaterialTheme.typography.titleLarge
+                            },
+                            fontWeight = FontWeight.ExtraBold,
+                            color = when {
+                                isCurrent -> Color.White
+                                isPast -> Color.White.copy(alpha = 0.35f)
+                                else -> Color.White.copy(alpha = 0.55f)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(enabled = lyrics.isSynced) { onSeekTo(line.timeMs) }
+                                .padding(vertical = 4.dp)
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF242424)),
-                    shape = RoundedCornerShape(16.dp),
+                // Mini Transport Bar at Bottom of Full-Screen Lyrics
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
-                        .padding(bottom = 16.dp)
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Letras",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                    Text(
+                        text = formatDuration(playbackState.positionMs),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onSkipPreviousClick) {
+                            Icon(
+                                imageVector = Icons.Default.SkipPrevious,
+                                contentDescription = "Anterior",
+                                tint = Color.White,
+                                modifier = Modifier.size(34.dp)
                             )
-                            if (lyrics.isSynced) {
-                                Text(
-                                    text = "Sincronizadas",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF1DB954),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                         }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                                .clickable(onClick = onPlayPauseClick),
+                            contentAlignment = Alignment.Center
                         ) {
-                            itemsIndexed(lyrics.lines) { index, line ->
-                                val isCurrent = lyrics.isSynced && index == activeIndex
-                                Text(
-                                    text = line.text,
-                                    style = if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                    color = when {
-                                        !lyrics.isSynced -> Color.White.copy(alpha = 0.85f)
-                                        isCurrent -> Color.White
-                                        else -> Color.White.copy(alpha = 0.45f)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable(enabled = lyrics.isSynced) { onSeekTo(line.timeMs) }
-                                )
-                            }
+                            Icon(
+                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = Color.Black,
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
+                        IconButton(onClick = onSkipNextClick) {
+                            Icon(
+                                imageVector = Icons.Default.SkipNext,
+                                contentDescription = "Siguiente",
+                                tint = Color.White,
+                                modifier = Modifier.size(34.dp)
+                            )
                         }
                     }
+                    Text(
+                        text = formatDuration(playbackState.durationMs.coerceAtLeast(1L)),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
                 }
             }
         }
@@ -514,7 +754,7 @@ fun NowPlayingScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
+                        .padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -529,6 +769,13 @@ fun NowPlayingScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Text(
+                    text = "Cola inteligente • Adaptada al gusto del usuario y afinidad de género",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1DB954),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
 
                 LazyColumn(
                     modifier = Modifier

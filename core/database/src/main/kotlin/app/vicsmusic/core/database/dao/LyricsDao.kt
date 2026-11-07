@@ -12,6 +12,9 @@ interface LyricsDao {
     @Query("SELECT * FROM lyrics_cache WHERE trackId = :trackId")
     fun getLyrics(trackId: String): Flow<LyricsCacheEntity?>
 
+    @Query("SELECT * FROM lyrics_cache WHERE content LIKE '%' || :query || '%' LIMIT 20")
+    suspend fun searchCachedLyrics(query: String): List<LyricsCacheEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLyrics(lyrics: LyricsCacheEntity)
 

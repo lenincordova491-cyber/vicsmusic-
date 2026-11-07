@@ -190,11 +190,14 @@ object InnerTubeParser {
 
     fun parsePlayer(root: JsonObject): PlayerResult {
         val streamingData = root.obj("streamingData")
+        // Progressive formats (itag 18/22) bypass YouTube's PoToken/SABR 403 block on mobile networks
+        // and return HTTP 200/206 reliably across all regions.
+        val progressive = streamingData.arr("formats").orEmpty().mapNotNull(::parseProgressiveAudioFormat)
         val adaptive = streamingData.arr("adaptiveFormats").orEmpty().mapNotNull(::parseAudioFormat)
-        val formats = if (adaptive.isNotEmpty()) {
-            adaptive
+        val formats = if (progressive.isNotEmpty()) {
+            progressive
         } else {
-            streamingData.arr("formats").orEmpty().mapNotNull(::parseProgressiveAudioFormat)
+            adaptive
         }
 
         return PlayerResult(

@@ -132,7 +132,7 @@ class JsonMusicSource(
     override suspend fun getStream(id: String, quality: AudioQuality): Result<StreamInfo> = withContext(Dispatchers.IO) {
         runCatching {
             val cachedUrl = streamUrlCache[id]
-            if (cachedUrl != null) {
+            if (!cachedUrl.isNullOrBlank()) {
                 return@runCatching StreamInfo(
                     trackId = id,
                     url = cachedUrl,
@@ -140,6 +140,41 @@ class JsonMusicSource(
                     bitrateKbps = 320
                 )
             }
+
+            val rawId = id.removePrefix("${definition.id}_")
+            val resolveConfig = definition.endpoints["resolveStream"]?.jsonObject
+            if (resolveConfig != null) {
+                val url = buildRequestUrl(resolveConfig, mapOf("id" to rawId, "appVersion" to "1.0.0"))
+                val jsonText = executeGet(url)
+                val root = json.parseToJsonElement(jsonText)
+                val responseConfig = resolveConfig["response"]?.jsonObject
+                val streamUrlPath = responseConfig?.get("streamUrlPath")?.jsonPrimitive?.contentOrNull
+                val resolvedStream = if (streamUrlPath != null) {
+                    JsonPathEvaluator.extractString(root, streamUrlPath)
+                } else null
+                if (!resolvedStream.isNullOrBlank()) {
+                    streamUrlCache[id] = resolvedStream
+                    return@runCatching StreamInfo(
+                        trackId = id,
+                        url = resolvedStream,
+                        mimeType = "audio/mp3",
+                        bitrateKbps = 320
+                    )
+                }
+            }
+
+            // Fallback when streamUrlCache was cleared after app restart: re-search by rawId
+            search(rawId, SearchType.TRACKS, 1)
+            val reResolved = streamUrlCache[id]
+            if (!reResolved.isNullOrBlank()) {
+                return@runCatching StreamInfo(
+                    trackId = id,
+                    url = reResolved,
+                    mimeType = "audio/mp3",
+                    bitrateKbps = 320
+                )
+            }
+
             throw NoSuchElementException("Stream URL for $id not found in extension ${definition.id}")
         }
     }
@@ -155,9 +190,21 @@ class JsonMusicSource(
         val queryParams = mutableListOf<String>()
 
         queryObj?.forEach { (k, v) ->
-            val rawVal = v.jsonPrimitive.contentOrNull ?: ""
-            val resolvedVal = TemplateEngine.resolve(rawVal, params, urlEncode = true)
-            queryParams.add("$k=$resolvedVal")
+            when (v) {
+                is JsonArray -> {
+                    v.forEach { elem ->
+                        val rawVal = (elem as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull ?: ""
+                        val resolvedVal = TemplateEngine.resolve(rawVal, params, urlEncode = true)
+                        queryParams.add("$k=$resolvedVal")
+                    }
+                }
+                is kotlinx.serialization.json.JsonPrimitive -> {
+                    val rawVal = v.contentOrNull ?: ""
+                    val resolvedVal = TemplateEngine.resolve(rawVal, params, urlEncode = true)
+                    queryParams.add("$k=$resolvedVal")
+                }
+                else -> {}
+            }
         }
 
         val baseUrl = definition.http.baseUrl.removeSuffix("/")

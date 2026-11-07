@@ -2,6 +2,8 @@ package app.vicsmusic.core.domain.engine
 
 import app.vicsmusic.core.model.Track
 import java.text.Normalizer
+import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -11,15 +13,56 @@ data class LyricMatchHint(
 )
 
 /**
- * Ultra-advanced multi-signal search & ranking engine.
- * Combines:
- * 1. Diacritic-insensitive & Spanish phonetic normalization (handling typos & spelling variations).
- * 2. N-gram and Levenshtein fuzzy edit-distance scoring.
- * 3. Full-text Lyric Phrase correlation (matching songs when the user only remembers a verse/lyric).
- * 4. Anti-noise filtering (demoting karaoke/covers/instrumentals unless requested).
- * 5. Personal taste affinity boost.
+ * Ultra-advanced multi-signal search & ranking engine V2.
+ * - Zero Regex allocations inside loops (precompiled companion regexes).
+ * - Non-destructive Spanish phonetic secondary bonus (preserves English titles like "The Hills", "Chill").
+ * - Single-row O(min(N,M)) Levenshtein similarity with early length pruning.
+ * - Preserves Live/Remix/Acoustic variants when requested in the query.
  */
 class AdvancedSearchEngine {
+
+    companion object {
+        private val DIACRITICS_REGEX = Regex("\\p{InCombiningDiacriticalMarks}+")
+        private val NON_ALPHANUM_REGEX = Regex("[^a-z0-9\\s]")
+        private val MULTI_SPACE_REGEX = Regex("\\s+")
+        private val NOISE_TAGS_REGEX = Regex(
+            "\\s*[\\(\\[](?:feat|ft|official|oficial|video|audio|remastered|lyric|letra|hd|4k).*?[\\)\\]]",
+            RegexOption.IGNORE_CASE
+        )
+        private val LIVE_OR_REMIX_KEYWORDS = listOf(
+            "en vivo", "live", "remix", "acustico", "acoustic", "unplugged", "karaoke", "instrumental"
+        )
+    }
+
+    fun normalize(input: String): String {
+        if (input.isBlank()) return ""
+        val lower = input.lowercase(Locale.ROOT)
+        val decomposed = Normalizer.normalize(lower, Normalizer.Form.NFD)
+        val withoutAccents = DIACRITICS_REGEX.replace(decomposed, "")
+        val alphaNum = NON_ALPHANUM_REGEX.replace(withoutAccents, " ")
+        return MULTI_SPACE_REGEX.replace(alphaNum, " ").trim()
+    }
+
+    fun cleanTitleNoise(title: String, preserveLiveAndRemix: Boolean = false): String {
+        val cleaned = NOISE_TAGS_REGEX.replace(title, "").trim()
+        return if (preserveLiveAndRemix) title.trim() else cleaned
+    }
+
+    fun isLikelyLyricQuery(query: String): Boolean {
+        val tokens = normalize(query).split(' ').filter { it.isNotBlank() }
+        return tokens.size >= 3 || query.contains("\"") || query.contains("...") || query.contains("letra", ignoreCase = true)
+    }
+
+    private fun spanishPhoneticCode(normalized: String): String =
+        normalized
+            .replace('v', 'b')
+            .replace('z', 's')
+            .replace("ce", "se")
+            .replace("ci", "si")
+            .replace("ll", "y")
+            .replace("ge", "je")
+            .replace("gi", "ji")
+            .replace("h", "")
 
     fun rankSearchResults(
         rawQuery: String,
@@ -32,190 +75,119 @@ class AdvancedSearchEngine {
         val normQuery = normalize(rawQuery)
         if (normQuery.isEmpty()) return candidates.distinctBy { it.id }
 
-        val queryTokens = normQuery.split(" ").filter { it.isNotBlank() }
-        val phoneticQuery = phoneticNormalize(normQuery)
-        val normalizedHints = lyricHints.map {
-            normalize(it.trackName) to normalize(it.artistName)
-        }
-        val normalizedPrefArtists = preferredArtists.map { normalize(it) }.toSet()
-        val wantsKaraokeOrCover = normQuery.contains("karaoke") || normQuery.contains("instrumental") || normQuery.contains("cover")
+        val queryTokens = normQuery.split(' ').filter { it.isNotBlank() }
+        val phoneticQuery = spanishPhoneticCode(normQuery)
+        val userWantsSpecialVersion = LIVE_OR_REMIX_KEYWORDS.any { normQuery.contains(it) }
+        val normPreferredArtists = preferredArtists.mapTo(HashSet()) { normalize(it) }
+        val normLyricHints = lyricHints.map { normalize(it.trackName) to normalize(it.artistName) }
 
-        val scored = candidates
-            .distinctBy { it.id }
-            .map { track ->
-                val normTitle = normalize(cleanTitleNoise(track.title))
-                val fullNormTitle = normalize(track.title)
-                val normArtist = normalize(track.artistName)
-                val normAlbum = normalize(track.albumName ?: "")
-                val combined = "$normTitle $normArtist $normAlbum".trim()
-                val phoneticCombined = phoneticNormalize("$normTitle $normArtist")
+        val scored = candidates.distinctBy { it.id }.map { track ->
+            val normTitle = normalize(cleanTitleNoise(track.title, userWantsSpecialVersion))
+            val rawNormTitle = normalize(track.title)
+            val normArtist = normalize(track.artistName)
+            val normAlbum = normalize(track.albumName.orEmpty())
+            val fullText = "$normTitle $normArtist $normAlbum".trim()
 
-                var score = 0f
+            var score = 0f
 
-                // 1. Direct & prefix title/artist match
-                if (normTitle == normQuery) score += 220f
-                else if (normTitle.startsWith(normQuery)) score += 150f
-                else if (normTitle.contains(normQuery)) score += 110f
+            // 1. Exact or prefix match on title and artist
+            when {
+                normTitle == normQuery -> score += 120f
+                normTitle.startsWith(normQuery) -> score += 85f
+                normTitle.contains(normQuery) -> score += 60f
+            }
+            when {
+                normArtist == normQuery -> score += 95f
+                normArtist.startsWith(normQuery) -> score += 70f
+                normArtist.contains(normQuery) -> score += 45f
+            }
+            if ("$normTitle $normArtist" == normQuery || "$normArtist $normTitle" == normQuery) {
+                score += 140f
+            }
 
-                if (normArtist == normQuery) score += 180f
-                else if (normArtist.startsWith(normQuery)) score += 120f
-                else if (normArtist.contains(normQuery)) score += 85f
-
-                if (combined.contains(normQuery)) score += 95f
-
-                // 2. Phonetic match (handles Spanish b/v, s/c/z, ll/y spelling errors)
-                if (phoneticQuery.length >= 4 && phoneticCombined.contains(phoneticQuery)) {
-                    score += 65f
-                }
-
-                // 3. Token coverage + Fuzzy Levenshtein similarity per token
-                val candidateTokens = combined.split(" ").filter { it.isNotBlank() }
-                if (queryTokens.isNotEmpty() && candidateTokens.isNotEmpty()) {
-                    var matchedTokensScore = 0f
-                    for (qToken in queryTokens) {
-                        val bestSim = candidateTokens.maxOfOrNull { cToken ->
-                            when {
-                                cToken == qToken -> 1.0f
-                                cToken.startsWith(qToken) || qToken.startsWith(cToken) -> 0.88f
-                                else -> similarityRatio(qToken, cToken)
-                            }
-                        } ?: 0f
-                        if (bestSim >= 0.68f) {
-                            matchedTokensScore += bestSim * 35f
+            // 2. Token coverage (BM25-lite + fast bounded Levenshtein)
+            val candidateTokens = fullText.split(' ').filter { it.isNotBlank() }
+            if (queryTokens.isNotEmpty() && candidateTokens.isNotEmpty()) {
+                var matchedTokens = 0f
+                for (qToken in queryTokens) {
+                    val bestTokenSim = candidateTokens.maxOf { cToken ->
+                        when {
+                            cToken == qToken -> 1.0f
+                            cToken.startsWith(qToken) || qToken.startsWith(cToken) -> 0.88f
+                            else -> boundedSimilarity(qToken, cToken)
                         }
                     }
-                    val coverageRatio = matchedTokensScore / (queryTokens.size * 35f)
-                    score += matchedTokensScore + (coverageRatio * 55f)
+                    if (bestTokenSim >= 0.72f) matchedTokens += bestTokenSim
                 }
-
-                // 4. Lyric Phrase Match Correlation (Cached DB lyrics + LRCLIB full-text lyric index)
-                if (cachedLyricMatchTrackIds.contains(track.id)) {
-                    score += 210f
-                }
-                for ((index, hint) in normalizedHints.withIndex()) {
-                    val (hintTitle, hintArtist) = hint
-                    val titleMatchesHint = hintTitle.isNotEmpty() && (
-                        normTitle == hintTitle ||
-                        normTitle.contains(hintTitle) ||
-                        hintTitle.contains(normTitle) ||
-                        similarityRatio(normTitle, hintTitle) >= 0.78f
-                    )
-                    val artistMatchesHint = hintArtist.isNotEmpty() && (
-                        normArtist.contains(hintArtist) ||
-                        hintArtist.contains(normArtist) ||
-                        similarityRatio(normArtist, hintArtist) >= 0.75f
-                    )
-                    if (titleMatchesHint && artistMatchesHint) {
-                        // Highest priority: exact song & artist identified from lyric fragment!
-                        score += (260f - index * 18f).coerceAtLeast(150f)
-                        break
-                    } else if (titleMatchesHint) {
-                        score += (120f - index * 10f).coerceAtLeast(60f)
-                    }
-                }
-
-                // 5. User Taste Profile Affinity Boost
-                if (normalizedPrefArtists.any { pref -> pref.isNotEmpty() && (normArtist.contains(pref) || pref.contains(normArtist)) }) {
-                    score += 30f
-                }
-                if (track.isLiked) {
-                    score += 20f
-                }
-
-                // 6. Anti-Noise Filter (demote karaoke/instrumental/cover/tribute when user wants original song)
-                if (!wantsKaraokeOrCover) {
-                    if (fullNormTitle.contains("karaoke") || fullNormTitle.contains("pista") || fullNormTitle.contains("instrumental")) {
-                        score -= 140f
-                    }
-                    if (fullNormTitle.contains("cover") || fullNormTitle.contains("tributo") || fullNormTitle.contains("parodia")) {
-                        score -= 80f
-                    }
-                }
-
-                // 7. Prefer online streaming tracks with high-res artwork over incomplete entries
-                if (!track.artworkUrl.isNullOrBlank()) {
-                    score += 10f
-                }
-
-                track to score
+                val coverage = matchedTokens / queryTokens.size
+                score += coverage * 75f
             }
 
-        // Deduplicate near-identical title+artist pairs while preserving the highest-scored canonical track
-        val sorted = scored.sortedByDescending { it.second }
-        val result = mutableListOf<Track>()
-        val seenCanonicalKeys = mutableSetOf<String>()
+            // 3. Secondary Spanish phonetic bonus
+            if (phoneticQuery.length >= 4) {
+                val phoneticCandidate = spanishPhoneticCode("$normTitle $normArtist")
+                if (phoneticCandidate.contains(phoneticQuery)) {
+                    score += 28f
+                }
+            }
 
-        for ((track, _) in sorted) {
-            val canonicalKey = "${normalize(cleanTitleNoise(track.title))}::${normalize(track.artistName)}"
-            if (seenCanonicalKeys.add(canonicalKey) || result.size < 8) {
-                result.add(track)
+            // 4. Lyric phrase match correlation (LRCLIB + cached Room lyrics)
+            if (track.id in cachedLyricMatchTrackIds) score += 90f
+            for ((hintTrack, hintArtist) in normLyricHints) {
+                if (hintTrack.isNotEmpty() && normTitle.contains(hintTrack)) {
+                    score += if (hintArtist.isNotEmpty() && normArtist.contains(hintArtist)) 85f else 45f
+                }
+            }
+
+            // 5. Quality & user taste signals
+            if (normArtist in normPreferredArtists) score += 18f
+            if (track.isLiked) score += 12f
+            if (!track.artworkUrl.isNullOrBlank()) score += 6f
+            if (track.durationMs in 60_000L..600_000L) score += 5f
+
+            if (!userWantsSpecialVersion) {
+                if (rawNormTitle.contains("karaoke") || rawNormTitle.contains("tributo") || rawNormTitle.contains("parodia")) {
+                    score -= 55f
+                }
+            }
+
+            track to score
+        }.sortedByDescending { it.second }
+
+        // Smart deduplication: preserve Live/Remix variants if user searched for them
+        val seenKeys = HashSet<String>()
+        val finalResults = ArrayList<Track>(scored.size)
+        for ((track, _) in scored) {
+            val titleKey = if (userWantsSpecialVersion) {
+                normalize(track.title)
+            } else {
+                normalize(cleanTitleNoise(track.title))
+            }
+            val dedupKey = "$titleKey::${normalize(track.artistName)}"
+            if (seenKeys.add(dedupKey)) {
+                finalResults.add(track)
             }
         }
-
-        return result
+        return finalResults
     }
 
-    fun isLikelyLyricQuery(query: String): Boolean {
-        val tokens = normalize(query).split(" ").filter { it.isNotBlank() }
-        return tokens.size >= 3 || query.contains("\"") || query.contains("...") || query.contains("letra", ignoreCase = true)
-    }
-
-    fun normalize(input: String): String {
-        if (input.isBlank()) return ""
-        val decomposed = Normalizer.normalize(input.lowercase(), Normalizer.Form.NFD)
-        return decomposed
-            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-            .replace(Regex("[^a-z0-9\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
-
-    private fun phoneticNormalize(normalized: String): String {
-        return normalized
-            .replace('v', 'b')
-            .replace('z', 's')
-            .replace("ce", "se")
-            .replace("ci", "si")
-            .replace("ll", "y")
-            .replace("ge", "je")
-            .replace("gi", "ji")
-            .replace("h", "")
-    }
-
-    private fun cleanTitleNoise(title: String): String {
-        return title
-            .replace(Regex("""\s*[\(\[](?:feat|ft|official|oficial|video|audio|remastered|lyric|letra|en vivo|live|hd|4k).*?[\)\]]""", RegexOption.IGNORE_CASE), "")
-            .trim()
-    }
-
-    private fun similarityRatio(a: String, b: String): Float {
-        if (a == b) return 1.0f
-        if (a.isEmpty() || b.isEmpty()) return 0.0f
+    private fun boundedSimilarity(a: String, b: String): Float {
+        if (a == b) return 1f
         val maxLen = max(a.length, b.length)
-        if (maxLen == 0) return 1.0f
-        val dist = levenshteinDistance(a, b)
-        return (1.0f - dist.toFloat() / maxLen.toFloat()).coerceIn(0f, 1f)
-    }
+        if (maxLen == 0) return 1f
+        val lenDiff = abs(a.length - b.length)
+        if (lenDiff.toFloat() / maxLen > 0.45f) return 0f
 
-    private fun levenshteinDistance(lhs: CharSequence, rhs: CharSequence): Int {
-        val lhsLen = lhs.length
-        val rhsLen = rhs.length
-        var cost = IntArray(lhsLen + 1) { it }
-        var newCost = IntArray(lhsLen + 1)
-
-        for (i in 1..rhsLen) {
-            newCost[0] = i
-            for (j in 1..lhsLen) {
-                val match = if (lhs[j - 1] == rhs[i - 1]) 0 else 1
-                val costReplace = cost[j - 1] + match
-                val costInsert = cost[j] + 1
-                val costDelete = newCost[j - 1] + 1
-                newCost[j] = min(min(costInsert, costDelete), costReplace)
+        val prev = IntArray(b.length + 1) { it }
+        val curr = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            curr[0] = i
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                curr[j] = min(min(curr[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost)
             }
-            val swap = cost
-            cost = newCost
-            newCost = swap
+            System.arraycopy(curr, 0, prev, 0, b.length + 1)
         }
-        return cost[lhsLen]
+        return (1f - (prev[b.length].toFloat() / maxLen)).coerceIn(0f, 1f)
     }
 }

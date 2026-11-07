@@ -9,14 +9,19 @@ import app.vicsmusic.core.model.Playlist
 import app.vicsmusic.core.model.Track
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class PlaylistRepositoryImpl @Inject constructor(
     private val playlistDao: PlaylistDao,
@@ -24,13 +29,34 @@ class PlaylistRepositoryImpl @Inject constructor(
 ) : PlaylistRepository {
 
     override fun getPlaylists(): Flow<List<Playlist>> {
-        return playlistDao.getAllPlaylists().map { list ->
-            list.map { it.asExternalModel() }
+        return playlistDao.getAllPlaylists().flatMapLatest { entities ->
+            if (entities.isEmpty()) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    entities.map { entity ->
+                        playlistDao.getTracksForPlaylist(entity.id).map { tracks ->
+                            entity.asExternalModel(
+                                trackCount = tracks.size,
+                                durationMs = tracks.sumOf { it.durationMs }
+                            )
+                        }
+                    }
+                ) { it.toList() }
+            }
         }
     }
 
     override fun getPlaylist(id: String): Flow<Playlist?> {
-        return playlistDao.getPlaylist(id).map { it?.asExternalModel() }
+        return combine(
+            playlistDao.getPlaylist(id),
+            playlistDao.getTracksForPlaylist(id)
+        ) { entity, tracks ->
+            entity?.asExternalModel(
+                trackCount = tracks.size,
+                durationMs = tracks.sumOf { it.durationMs }
+            )
+        }
     }
 
     override fun getPlaylistTracks(playlistId: String): Flow<List<Track>> {

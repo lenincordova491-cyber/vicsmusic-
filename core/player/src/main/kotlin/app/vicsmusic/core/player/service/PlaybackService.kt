@@ -74,6 +74,22 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(LibraryResult.ofItemList(items.build(), params))
         }
 
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val baseResult = super.onConnect(session, controller)
+            val sessionCommands = baseResult.availableSessionCommands
+                .buildUpon()
+                .add(SessionCommand(ACTION_TOGGLE_SHUFFLE, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_TOGGLE_REPEAT, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.accept(
+                sessionCommands,
+                baseResult.availablePlayerCommands
+            )
+        }
+
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -99,7 +115,7 @@ class PlaybackService : MediaLibraryService() {
             )
         }
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, playerManager.exoPlayer, callback)
+        mediaLibrarySession = MediaLibrarySession.Builder(this, playerManager.sessionPlayer, callback)
             .apply {
                 if (sessionActivityPendingIntent != null) {
                     setSessionActivity(sessionActivityPendingIntent)

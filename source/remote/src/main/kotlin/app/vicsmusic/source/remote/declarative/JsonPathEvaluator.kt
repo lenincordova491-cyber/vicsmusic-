@@ -26,12 +26,18 @@ object JsonPathEvaluator {
         var current: JsonElement? = root
 
         for (token in tokens) {
-            if (current == null) return null
+            if (current == null || current is kotlinx.serialization.json.JsonNull) return null
             current = when {
                 token.startsWith("[") && token.endsWith("]") -> {
-                    val index = token.substring(1, token.length - 1).toIntOrNull() ?: return null
-                    if (current is JsonArray && index in 0 until current.size) {
-                        current[index]
+                    val rawInner = token.substring(1, token.length - 1).trim()
+                    val unquoted = rawInner.removeSurrounding("'").removeSurrounding("\"")
+                    val index = rawInner.toIntOrNull()
+                    if (index != null && rawInner == unquoted) {
+                        if (current is JsonArray && index in 0 until current.size) {
+                            current[index]
+                        } else null
+                    } else if (current is JsonObject) {
+                        current[unquoted]
                     } else null
                 }
                 current is JsonObject -> {

@@ -52,8 +52,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.mutableStateOf
@@ -103,6 +105,7 @@ fun NowPlayingRoute(
         onRepeatClick = viewModel::toggleRepeat,
         onLikeClick = viewModel::toggleLike,
         onPlayQueueIndex = viewModel::playTrackAtIndex,
+        onRemoveQueueItem = viewModel::removeQueueItem,
         modifier = modifier
     )
 }
@@ -122,6 +125,7 @@ fun NowPlayingScreen(
     onRepeatClick: () -> Unit,
     onLikeClick: () -> Unit,
     onPlayQueueIndex: (Int) -> Unit,
+    onRemoveQueueItem: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val track = playbackState.currentTrack
@@ -435,17 +439,31 @@ fun NowPlayingScreen(
                 }
             }
 
-            // Spotify Professional Synced Karaoke Lyrics Card
+            // Spotify Professional Synced Karaoke Lyrics Card (O(log N) binarySearch + non-intrusive user scroll)
             val hasLyrics = lyrics != null && lyrics.lines.isNotEmpty()
-            val activeIndex = if (hasLyrics && lyrics != null && lyrics.isSynced) {
-                lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }.coerceAtLeast(0)
-            } else {
-                0
+            val activeIndex by remember(lyrics, playbackState.positionMs) {
+                derivedStateOf {
+                    val lines = lyrics?.lines.orEmpty()
+                    if (lines.isEmpty() || lyrics?.isSynced != true) 0
+                    else {
+                        val pos = playbackState.positionMs + 180L // 180ms visual anticipation
+                        val idx = lines.binarySearch { it.timeMs.compareTo(pos) }
+                        if (idx >= 0) idx else (-idx - 2).coerceAtLeast(0)
+                    }
+                }
             }
             val listState = rememberLazyListState()
+            var lastUserScrollTimeMs by remember { mutableLongStateOf(0L) }
+
+            LaunchedEffect(listState.isScrollInProgress) {
+                if (listState.isScrollInProgress) {
+                    lastUserScrollTimeMs = System.currentTimeMillis()
+                }
+            }
 
             LaunchedEffect(activeIndex, track?.id, hasLyrics) {
-                if (hasLyrics && lyrics != null && lyrics.isSynced && activeIndex >= 0) {
+                val userRecentlyScrolled = (System.currentTimeMillis() - lastUserScrollTimeMs) < 4_000L
+                if (hasLyrics && lyrics != null && lyrics.isSynced && activeIndex >= 0 && !listState.isScrollInProgress && !userRecentlyScrolled) {
                     listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
                 }
             }
@@ -813,20 +831,42 @@ fun NowPlayingScreen(
                             }
                         }
 
-                        TrackRow(
-                            track = trackItem,
-                            isPlaying = isCurrent && playbackState.isPlaying,
-                            onClick = {
-                                onPlayQueueIndex(index)
-                                showQueueSheet = false
-                            },
-                            modifier = if (isCurrent) {
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                            } else Modifier
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TrackRow(
+                                track = trackItem,
+                                isPlaying = isCurrent && playbackState.isPlaying,
+                                onClick = {
+                                    onPlayQueueIndex(index)
+                                    showQueueSheet = false
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .let { mod ->
+                                        if (isCurrent) {
+                                            mod.background(
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                RoundedCornerShape(12.dp)
+                                            )
+                                        } else mod
+                                    }
+                            )
+                            if (!isCurrent) {
+                                IconButton(
+                                    onClick = { onRemoveQueueItem(index) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Quitar de la cola",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

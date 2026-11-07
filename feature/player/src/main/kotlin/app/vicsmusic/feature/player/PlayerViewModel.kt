@@ -126,6 +126,10 @@ class PlayerViewModel @Inject constructor(
         playbackConnection.removeQueueItem(index)
     }
 
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        playbackConnection.moveQueueItem(fromIndex, toIndex)
+    }
+
     fun toggleLike() {
         val currentTrack = playbackState.value.currentTrack ?: return
         val newLiked = !currentTrack.isLiked

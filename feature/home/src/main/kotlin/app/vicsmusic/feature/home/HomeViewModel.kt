@@ -289,9 +289,6 @@ class HomeViewModel @Inject constructor(
     }
 
     fun playTrack(track: Track, fromQueue: List<Track> = emptyList()) {
-        viewModelScope.launch {
-            musicRepository.recordPlayHistory(track.id, 0.85f)
-        }
         if (fromQueue.isNotEmpty()) {
             val remoteQueue = fromQueue.filter { it.sourceId != "local" }
             val fullQueue = if (remoteQueue.size < 20) {

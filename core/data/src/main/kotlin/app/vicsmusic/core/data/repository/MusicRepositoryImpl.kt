@@ -25,21 +25,25 @@ import app.vicsmusic.core.network.LrcParser
 import app.vicsmusic.core.network.LrclibClient
 import app.vicsmusic.core.network.VicsHttpClientFactory
 import app.vicsmusic.source.api.SearchType
+import app.vicsmusic.source.api.SourceCapability
 import app.vicsmusic.source.api.SourceRegistry
 import app.vicsmusic.source.local.LocalMusicSource
 import app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.Locale
 import javax.inject.Inject
@@ -108,6 +112,28 @@ class MusicRepositoryImpl @Inject constructor(
 
     private val advancedSearchEngine = AdvancedSearchEngine()
 
+    private suspend fun upsertTracksPreservingUserState(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val ids = tracks.map { it.id }
+        val existingById = trackDao.getTracks(ids).firstOrNull().orEmpty().associateBy { it.id }
+        val merged = tracks.map { remote ->
+            val existing = existingById[remote.id]
+            if (existing != null) {
+                remote.asEntity().copy(
+                    isLiked = existing.isLiked,
+                    addedAt = existing.addedAt,
+                    lastPlayedAt = existing.lastPlayedAt,
+                    playCount = existing.playCount,
+                    durationMs = if (remote.durationMs > 0L) remote.durationMs else existing.durationMs,
+                    artworkUrl = remote.artworkUrl ?: existing.artworkUrl
+                )
+            } else {
+                remote.asEntity()
+            }
+        }
+        trackDao.upsertTracks(merged)
+    }
+
     override suspend fun searchTracks(query: String): Result<List<Track>> = withContext(ioDispatcher) {
         runCatching {
             val clean = query.trim()
@@ -126,25 +152,33 @@ class MusicRepositoryImpl @Inject constructor(
             }.getOrDefault(emptySet())
             val cachedLyricTracks = allCatalogOnline.filter { cachedLyricMatchIds.contains(it.id) }
 
-            // 3. Búsqueda paralela multi-señal: Catálogo remoto + Índice global de Letras (LRCLIB + YouTube Lyric Index)
+            // 3. Búsqueda paralela multi-señal con filtro de capacidades y timeout individual (FIX BUG-04)
             val isLyricLike = advancedSearchEngine.isLikelyLyricQuery(clean)
             val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID)
+            val searchableSources = sourceRegistry.getAllSources().filter { source ->
+                source !is LocalMusicSource &&
+                    SourceCapability.SEARCH in source.capabilities &&
+                    SourceCapability.STREAM in source.capabilities &&
+                    source.id in setOf("ytmusic", "itunes-preview", "deezer-preview")
+            }
 
             val (remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
                 val directDeferred = async {
-                    val items = mutableListOf<Track>()
-                    for (source in sourceRegistry.getAllSources()) {
-                        if (source is LocalMusicSource) continue
-                        source.search(clean, SearchType.TRACKS, 1).getOrNull()?.let {
-                            items.addAll(it.items.filter { t -> t.sourceId != "local" })
+                    searchableSources.map { source ->
+                        async {
+                            withTimeoutOrNull(6_000L) {
+                                source.search(clean, SearchType.TRACKS, 1).getOrNull()?.items
+                                    ?.filter { t -> t.sourceId != "local" }.orEmpty()
+                            }.orEmpty()
                         }
-                    }
-                    items
+                    }.awaitAll().flatten()
                 }
 
                 val lrclibDeferred = async {
                     if (clean.length >= 4) {
-                        lrclibClient.searchSongsByLyricPhrase(clean, limit = 4)
+                        withTimeoutOrNull(4_500L) {
+                            lrclibClient.searchSongsByLyricPhrase(clean, limit = 4)
+                        }.orEmpty()
                     } else {
                         emptyList()
                     }
@@ -152,7 +186,9 @@ class MusicRepositoryImpl @Inject constructor(
 
                 val ytLyricDeferred = async {
                     if (isLyricLike && ytSource != null && !clean.lowercase().contains("letra")) {
-                        ytSource.search("$clean letra", SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                        withTimeoutOrNull(5_500L) {
+                            ytSource.search("$clean letra", SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                        }.orEmpty()
                     } else {
                         emptyList()
                     }
@@ -172,8 +208,10 @@ class MusicRepositoryImpl @Inject constructor(
                 coroutineScope {
                     val jobs = topHintsToResolve.map { cand ->
                         async {
-                            ytSource.search("${cand.trackName} ${cand.artistName}", SearchType.TRACKS, 1)
-                                .getOrNull()?.items?.take(2).orEmpty()
+                            withTimeoutOrNull(4_500L) {
+                                ytSource.search("${cand.trackName} ${cand.artistName}", SearchType.TRACKS, 1)
+                                    .getOrNull()?.items?.take(2).orEmpty()
+                            }.orEmpty()
                         }
                     }
                     jobs.forEach { resolvedLyricTracks.addAll(it.await()) }
@@ -182,7 +220,7 @@ class MusicRepositoryImpl @Inject constructor(
 
             val allRemote = (remoteDirect + remoteLyricSearch + resolvedLyricTracks).distinctBy { it.id }
             if (allRemote.isNotEmpty()) {
-                trackDao.upsertTracks(allRemote.map { it.asEntity() })
+                upsertTracksPreservingUserState(allRemote)
             }
 
             val lyricHints = lrclibCandidates.map { LyricMatchHint(it.trackName, it.artistName) }
@@ -248,32 +286,40 @@ class MusicRepositoryImpl @Inject constructor(
         withContext(ioDispatcher) {
             runCatching {
                 val streamInfo = getStreamInfo(track.id, AudioQuality.HIGH).getOrThrow()
+                val ext = when {
+                    streamInfo.mimeType.contains("webm", ignoreCase = true) -> "webm"
+                    streamInfo.mimeType.contains("mp4", ignoreCase = true) ||
+                        streamInfo.mimeType.contains("m4a", ignoreCase = true) -> "m4a"
+                    else -> "mp3"
+                }
                 val downloadDir = File(context.filesDir, "downloads").apply { if (!exists()) mkdirs() }
-                val safeFileName = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".m4a"
+                val safeFileName = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".$ext"
                 val targetFile = File(downloadDir, safeFileName)
 
                 onProgress(0.1f)
-                val client = VicsHttpClientFactory.create()
-                val response = client.get(streamInfo.url)
-                if (response.status != HttpStatusCode.OK) {
-                    throw IllegalStateException("Failed to download stream, HTTP status ${response.status}")
+                VicsHttpClientFactory.create().use { client ->
+                    val response = client.get(streamInfo.url) {
+                        streamInfo.headers.forEach { (k, v) -> header(k, v) }
+                    }
+                    if (response.status != HttpStatusCode.OK && response.status != HttpStatusCode.PartialContent) {
+                        throw IllegalStateException("Failed to download stream, HTTP status ${response.status}")
+                    }
+                    val bytes = response.bodyAsBytes()
+                    targetFile.writeBytes(bytes)
                 }
-
-                val bytes = response.bodyAsBytes()
-                targetFile.writeBytes(bytes)
                 onProgress(1.0f)
 
                 val downloadEntity = DownloadEntity(
                     trackId = track.id,
                     localPath = targetFile.absolutePath,
-                    format = "m4a",
+                    format = ext,
                     quality = AudioQuality.HIGH.name,
                     downloadedAt = System.currentTimeMillis(),
                     sizeBytes = targetFile.length(),
                     state = DownloadStatus.COMPLETED.name
                 )
                 downloadDao.upsertDownload(downloadEntity)
-                trackDao.upsertTracks(listOf(track.asEntity()))
+                upsertTracksPreservingUserState(listOf(track))
 
                 targetFile.absolutePath
             }

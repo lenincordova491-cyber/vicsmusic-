@@ -21,7 +21,7 @@ annotation class DefaultDispatcher
 object DispatchersModule {
 
     @Provides
-    fun provideDefaultDispatcher(): CoroutineDispatcher = Dispatchers.IO
+    fun provideDefaultDispatcher(): CoroutineDispatcher = Dispatchers.Default
 
     @Provides
     @IoDispatcher

@@ -257,7 +257,23 @@ class QueueManager @Inject constructor(
         val currentItems = _state.value.items
         scope.launch {
             if (currentItems.isNotEmpty()) {
-                trackDao.upsertTracks(currentItems.map { it.asEntity() })
+                val ids = currentItems.map { it.id }
+                val existingById = trackDao.getTracks(ids).firstOrNull().orEmpty().associateBy { it.id }
+                val entitiesToUpsert = currentItems.map { track ->
+                    val existing = existingById[track.id]
+                    if (existing != null) {
+                        track.asEntity().copy(
+                            isLiked = existing.isLiked,
+                            addedAt = existing.addedAt,
+                            lastPlayedAt = existing.lastPlayedAt,
+                            playCount = existing.playCount,
+                            durationMs = if (track.durationMs > 0L) track.durationMs else existing.durationMs
+                        )
+                    } else {
+                        track.asEntity()
+                    }
+                }
+                trackDao.upsertTracks(entitiesToUpsert)
             }
             queueDao.clearQueue()
             if (currentItems.isNotEmpty()) {

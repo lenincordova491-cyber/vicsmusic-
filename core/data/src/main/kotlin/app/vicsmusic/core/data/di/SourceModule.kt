@@ -59,15 +59,12 @@ object SourceModule {
     @Provides
     @Singleton
     fun provideSourceRegistry(
-        @ApplicationContext context: Context,
-        httpClient: HttpClient,
         youTubeMusicSource: YouTubeMusicSource,
         localMusicSource: LocalMusicSource
     ): SourceRegistry {
         val registry = SourceRegistry()
         registry.register(youTubeMusicSource)
         registry.register(localMusicSource)
-        app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager(context, httpClient, registry)
         return registry
     }
 

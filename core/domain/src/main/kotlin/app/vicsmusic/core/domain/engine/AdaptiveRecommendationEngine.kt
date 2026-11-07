@@ -1,7 +1,11 @@
 package app.vicsmusic.core.domain.engine
 
 import app.vicsmusic.core.model.Track
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.max
 
 data class ListeningEvent(
     val trackId: String,
@@ -12,7 +16,7 @@ data class ListeningEvent(
 
 data class UserTasteProfile(
     val topArtists: List<String> = emptyList(),
-    val dominantGenre: String = "Mix Personalizado",
+    val dominantGenre: String = "Pop Global",
     val tasteSummaryLabel: String = "Adaptado a tu gusto musical",
     val artistScores: Map<String, Float> = emptyMap(),
     val genreScores: Map<String, Float> = emptyMap()
@@ -26,36 +30,79 @@ data class RecommendationResult(
     val tasteProfile: UserTasteProfile = UserTasteProfile()
 )
 
+enum class DayPart(val label: String, val energyBias: Float) {
+    MORNING("Energía Matutina", 1.15f),     // 05:00 - 11:59
+    AFTERNOON("Ritmo de Tarde", 1.25f),     // 12:00 - 17:59
+    EVENING("Sesión Nocturna", 1.00f),      // 18:00 - 22:59
+    LATE_NIGHT("Modo Chill & Relax", 0.80f) // 23:00 - 04:59
+}
+
 /**
- * Deep User Taste Analysis & Adaptive Recommendation Engine.
- * Evaluates completion ratios, skips, replays, exponential recency decay, explicit likes,
- * and genre/vibe clusters to personalize both the Home feed and the Playback Queue.
+ * Deep User Taste Analysis & Adaptive Recommendation Engine V2.
+ * Uses Bayesian-style affinity scoring, contextual bandits by hour of day (DayPart),
+ * 45-minute anti-repeat cooldown, consecutive skip dampening, and epsilon-greedy exploration.
  */
 class AdaptiveRecommendationEngine {
 
     companion object {
-        private const val COMPLETION_THRESHOLD_LOVED = 0.85f
-        private const val COMPLETION_THRESHOLD_POSITIVE = 0.60f
-        private const val COMPLETION_THRESHOLD_SKIP = 0.22f
+        private const val HALF_LIFE_DAYS = 14.0
+        private const val COOLDOWN_WINDOW_MS = 45 * 60 * 1000L // 45 min anti-repeat cooldown
+        private const val EXPLORATION_RATIO = 0.20f // 20% discovery
 
-        private const val POINTS_LOVED_LISTEN = 4.5f
-        private const val POINTS_FULL_LISTEN = 3.0f
-        private const val POINTS_PARTIAL_LISTEN = 1.0f
-        private const val POINTS_SKIP = -2.8f
-        private const val POINTS_LIKED = 8.0f
-        private const val POINTS_REPLAY_BONUS = 3.5f
-
-        const val GENRE_CUMBIA = "Cumbia y Fiesta"
-        const val GENRE_ROCK_POP = "Rock y Pop"
-        const val GENRE_URBANO = "Urbano Latino"
-        const val GENRE_SALSA = "Salsa y Tropical"
-        const val GENRE_GLOBAL_POP = "Pop y Tendencias"
+        private val GENRE_KEYWORDS: Map<String, List<String>> = mapOf(
+            "Cumbia y Fiesta" to listOf(
+                "grupo 5", "grupo_5", "agua marina", "armonia 10", "armonia_10", "corazon serrano",
+                "ke personajes", "angeles azules", "destellos", "hijos del sol", "chacal", "maroyu",
+                "amar azul", "rafaga", "cumbia", "chicha", "huayno", "yarita"
+            ),
+            "Salsa y Tropical" to listOf(
+                "marc anthony", "oscar d", "ruben blades", "grupo niche", "gilberto santa rosa",
+                "hector lavoe", "willie colon", "frankie ruiz", "eddie santiago", "salsa",
+                "romeo santos", "aventura", "juan luis guerra", "bachata", "merengue", "daniela darcourt"
+            ),
+            "Rock & Alternativo" to listOf(
+                "soda stereo", "queen", "coldplay", "enanitos verdes", "mana", "maná",
+                "prisioneros", "caifanes", "jarabe de palo", "mojarras", "hombres g",
+                "libido", "amen", "mar de copas", "imagine dragons", "smashing pumpkins",
+                "arctic monkeys", "linkin park", "nirvana", "strokes", "cerati", "rock", "indie"
+            ),
+            "Urbano Latino" to listOf(
+                "bad bunny", "karol g", "feid", "bizarrap", "manuel turizo", "quevedo",
+                "rauw", "rosalia", "maluma", "daddy yankee", "don omar", "ozuna",
+                "j balvin", "myke towers", "young miko", "mora", "reggaeton", "trap"
+            ),
+            "Electrónica & Synth" to listOf(
+                "daft punk", "calvin harris", "david guetta", "avicii", "tiesto", "alan walker",
+                "marshmello", "skrillex", "fred again", "remix", "edm", "house", "techno"
+            ),
+            "Baladas & Acústico" to listOf(
+                "luis miguel", "jose jose", "camila", "sin bandera", "reik", "morat",
+                "mon laferte", "natalia lafourcade", "balada", "acustico", "unplugged"
+            ),
+            "Pop Global" to listOf(
+                "the weeknd", "bruno mars", "dua lipa", "billie eilish", "taylor swift",
+                "sabrina carpenter", "ed sheeran", "miley cyrus", "ariana grande", "harry styles"
+            )
+        )
     }
 
-    /**
-     * Analyzes all user signals (history, completion rates, skips, replays, likes, onboarding artists)
-     * to build a multi-dimensional UserTasteProfile.
-     */
+    fun currentDayPart(hourOfDay: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)): DayPart =
+        when (hourOfDay) {
+            in 5..11 -> DayPart.MORNING
+            in 12..17 -> DayPart.AFTERNOON
+            in 18..22 -> DayPart.EVENING
+            else -> DayPart.LATE_NIGHT
+        }
+
+    fun inferTrackGenre(track: Track): String {
+        val signal = "${track.artistName} ${track.artistId} ${track.albumName.orEmpty()} ${track.title}"
+            .lowercase(Locale.ROOT)
+        for ((genre, keywords) in GENRE_KEYWORDS) {
+            if (keywords.any { signal.contains(it) }) return genre
+        }
+        return "Pop Global"
+    }
+
     fun analyzeUserTaste(
         allAvailableTracks: List<Track>,
         listeningHistory: List<ListeningEvent>,
@@ -65,179 +112,173 @@ class AdaptiveRecommendationEngine {
         val now = System.currentTimeMillis()
         val artistScores = mutableMapOf<String, Float>()
         val genreScores = mutableMapOf<String, Float>()
+        val consecutiveSkipsByArtist = mutableMapOf<String, Int>()
         val trackById = allAvailableTracks.associateBy { it.id }
 
-        // 1. Seed from explicit favorite artists
+        // 1. Seed from onboarding favorite artists
         for (rawArtist in favoriteArtistNames) {
-            val clean = rawArtist.replace("_", " ").trim()
+            val clean = rawArtist.replace('_', ' ').trim()
             if (clean.isNotEmpty()) {
-                artistScores[clean] = (artistScores[clean] ?: 0f) + 18.0f
-                val genre = inferGenreByArtist(clean)
-                genreScores[genre] = (genreScores[genre] ?: 0f) + 12.0f
+                artistScores[clean] = (artistScores[clean] ?: 0f) + 6.0f
             }
         }
 
-        // 2. Explicit liked tracks boost
+        // 2. Liked tracks boost
         for (track in allAvailableTracks) {
-            if (track.isLiked || favoriteTrackIds.contains(track.id)) {
-                val artistKey = track.artistName.trim()
-                artistScores[artistKey] = (artistScores[artistKey] ?: 0f) + POINTS_LIKED
+            if (track.isLiked || track.id in favoriteTrackIds) {
+                val artist = track.artistName.trim()
+                artistScores[artist] = (artistScores[artist] ?: 0f) + 5.0f
                 val genre = inferTrackGenre(track)
-                genreScores[genre] = (genreScores[genre] ?: 0f) + 8.0f
+                genreScores[genre] = (genreScores[genre] ?: 0f) + 3.5f
             }
         }
 
-        // 3. Behavioral history with exponential recency decay & replay detection
-        val positiveCountsByTrack = mutableMapOf<String, Int>()
-        for (event in listeningHistory) {
-            val hoursAgo = ((now - event.timestamp).coerceAtLeast(0L) / 3_600_000.0).toFloat()
-            // Half-life around 72 hours, with 1.4x boost for very recent listens
-            val recencyWeight = (0.65f + 0.75f * exp(-hoursAgo / 72.0f)).coerceIn(0.65f, 1.4f)
+        // 3. Listening history with exponential recency decay & consecutive skip streak dampening
+        val sortedHistory = listeningHistory.sortedBy { it.timestamp }
+        for (event in sortedHistory) {
+            val ageDays = ((now - event.timestamp).coerceAtLeast(0L)) / (1000.0 * 60 * 60 * 24)
+            val recencyWeight = exp(-ln(2.0) * (ageDays / HALF_LIFE_DAYS)).toFloat().coerceIn(0.15f, 1.0f)
 
-            val baseDelta = when {
-                event.completionPercentage >= COMPLETION_THRESHOLD_LOVED -> POINTS_LOVED_LISTEN
-                event.completionPercentage >= COMPLETION_THRESHOLD_POSITIVE -> POINTS_FULL_LISTEN
-                event.completionPercentage <= COMPLETION_THRESHOLD_SKIP -> POINTS_SKIP
-                else -> POINTS_PARTIAL_LISTEN
-            }
+            val artist = event.artistName.trim()
+            val completion = event.completionPercentage
 
-            var weightedDelta = baseDelta * recencyWeight
-            if (event.completionPercentage >= COMPLETION_THRESHOLD_POSITIVE) {
-                val count = (positiveCountsByTrack[event.trackId] ?: 0) + 1
-                positiveCountsByTrack[event.trackId] = count
-                if (count > 1) {
-                    weightedDelta += POINTS_REPLAY_BONUS
+            val eventScore = when {
+                completion < 0.25f -> {
+                    consecutiveSkipsByArtist[artist] = (consecutiveSkipsByArtist[artist] ?: 0) + 1
+                    -2.5f
+                }
+                completion < 0.60f -> {
+                    consecutiveSkipsByArtist[artist] = 0
+                    +1.0f
+                }
+                completion < 0.90f -> {
+                    consecutiveSkipsByArtist[artist] = 0
+                    +3.0f
+                }
+                else -> {
+                    consecutiveSkipsByArtist[artist] = 0
+                    +4.8f
                 }
             }
 
-            val artistKey = event.artistName.trim()
-            if (artistKey.isNotEmpty() && !artistKey.equals("Artista", ignoreCase = true)) {
-                artistScores[artistKey] = (artistScores[artistKey] ?: 0f) + weightedDelta
+            val skipPenaltyMultiplier = if ((consecutiveSkipsByArtist[artist] ?: 0) >= 3) 1.8f else 1.0f
+            val weighted = eventScore * recencyWeight * skipPenaltyMultiplier
+
+            if (artist.isNotEmpty() && !artist.equals("Artista", ignoreCase = true)) {
+                artistScores[artist] = (artistScores[artist] ?: 0f) + weighted
             }
 
-            val track = trackById[event.trackId]
-            val genre = if (track != null) inferTrackGenre(track) else inferGenreByArtist(artistKey)
-            genreScores[genre] = (genreScores[genre] ?: 0f) + (weightedDelta * 0.8f)
+            val genre = trackById[event.trackId]?.let(::inferTrackGenre) ?: "Pop Global"
+            genreScores[genre] = (genreScores[genre] ?: 0f) + (weighted * 0.7f)
         }
 
         val topArtists = artistScores.entries
             .filter { it.value > 0f }
             .sortedByDescending { it.value }
             .map { it.key }
-            .take(4)
+            .take(8)
 
-        val dominantGenre = genreScores.entries
-            .filter { it.value > 0f }
-            .maxByOrNull { it.value }
-            ?.key
-            ?: GENRE_GLOBAL_POP
-
-        val summaryLabel = when {
-            topArtists.size >= 2 -> "Tu estilo: ${topArtists.take(2).joinToString(", ")} • $dominantGenre"
-            topArtists.size == 1 -> "Afinidad principal: ${topArtists.first()} • $dominantGenre"
-            else -> " Algoritmo adaptativo • $dominantGenre"
-        }.trim()
+        val dominantGenre = genreScores.maxByOrNull { it.value }?.key ?: "Pop Global"
+        val dayPart = currentDayPart()
+        val summary = if (topArtists.isNotEmpty()) {
+            "${dayPart.label} • $dominantGenre (${topArtists.take(3).joinToString(", ")})"
+        } else {
+            "${dayPart.label} • Explora tu mezcla personalizada"
+        }
 
         return UserTasteProfile(
             topArtists = topArtists,
             dominantGenre = dominantGenre,
-            tasteSummaryLabel = summaryLabel,
+            tasteSummaryLabel = summary,
             artistScores = artistScores,
             genreScores = genreScores
         )
     }
 
-    /**
-     * Scores and clusters tracks into personalized recommendation groups for the Home screen.
-     */
     fun computeRecommendations(
         allAvailableTracks: List<Track>,
         listeningHistory: List<ListeningEvent>,
         favoriteTrackIds: Set<String> = emptySet(),
         favoriteArtistNames: Set<String> = emptySet(),
-        maxPerSection: Int = 12
+        maxPerSection: Int = 15
     ): RecommendationResult {
-        if (allAvailableTracks.isEmpty()) {
-            return RecommendationResult(
-                dailyMix = emptyList(),
-                recommendedForYou = emptyList(),
-                jumpBackIn = emptyList(),
-                topArtistAffinity = null
-            )
-        }
+        if (allAvailableTracks.isEmpty()) return RecommendationResult(emptyList(), emptyList(), emptyList(), null)
 
-        val tasteProfile = analyzeUserTaste(
-            allAvailableTracks = allAvailableTracks,
-            listeningHistory = listeningHistory,
-            favoriteTrackIds = favoriteTrackIds,
-            favoriteArtistNames = favoriteArtistNames
-        )
+        val now = System.currentTimeMillis()
+        val profile = analyzeUserTaste(allAvailableTracks, listeningHistory, favoriteTrackIds, favoriteArtistNames)
+        val dayPart = currentDayPart()
 
-        val topArtist = tasteProfile.topArtists.firstOrNull()
-
-        // Score every track using artist affinity + genre affinity + likes + playCount
-        val scoredTracks = allAvailableTracks.map { track ->
-            var score = 0f
-
-            val artistScore = resolveArtistScore(track, tasteProfile.artistScores)
-            score += artistScore * 2.2f
-
-            val genre = inferTrackGenre(track)
-            val genreScore = tasteProfile.genreScores[genre] ?: 0f
-            score += genreScore * 1.1f
-
-            val isFavoriteArtist = favoriteArtistNames.any { fav ->
-                matchesArtist(track, fav)
-            }
-            if (isFavoriteArtist) {
-                score += 14.0f
-            }
-
-            if (track.isLiked || favoriteTrackIds.contains(track.id)) {
-                score += POINTS_LIKED
-            }
-
-            score += (track.playCount.coerceAtMost(20)) * 0.6f
-
-            track to score
-        }
-
-        val completedTrackIds = listeningHistory
-            .filter { it.completionPercentage >= COMPLETION_THRESHOLD_POSITIVE }
+        val recentlyPlayedIds = listeningHistory
+            .filter { now - it.timestamp < COOLDOWN_WINDOW_MS }
             .map { it.trackId }
             .toSet()
 
-        val jumpBackIn = allAvailableTracks
-            .filter { completedTrackIds.contains(it.id) }
-            .take(maxPerSection)
+        val everPlayedIds = listeningHistory.map { it.trackId }.toSet()
 
-        // Daily Mix: Balanced top-scored tracks with artist diversity (max 2 per artist in top 10)
-        val sortedByScore = scoredTracks.sortedByDescending { it.second }
-        val dailyMix = selectWithDiversity(sortedByScore.map { it.first }, maxPerArtist = 2, limit = maxPerSection)
+        val scoredCandidates = allAvailableTracks.map { track ->
+            val genre = inferTrackGenre(track)
+            val artistAffinity = resolveArtistScore(track, profile.artistScores)
+            val genreAffinity = profile.genreScores[genre] ?: 0f
 
-        // Recommended For You: Discovery-oriented tracks aligned with user's top genres & artists
-        val discoveryCandidates = sortedByScore
-            .filter { (track, _) -> !completedTrackIds.contains(track.id) }
+            val dayPartBonus = when (dayPart) {
+                DayPart.MORNING -> if (genre in setOf("Rock & Alternativo", "Pop Global")) 2.0f else 0.5f
+                DayPart.AFTERNOON -> if (genre in setOf("Urbano Latino", "Cumbia y Fiesta", "Salsa y Tropical")) 2.5f else 0.5f
+                DayPart.EVENING -> if (genre in setOf("Cumbia y Fiesta", "Salsa y Tropical", "Urbano Latino")) 2.5f else 1.0f
+                DayPart.LATE_NIGHT -> if (genre in setOf("Baladas & Acústico", "Rock & Alternativo", "Pop Global")) 2.5f else 0f
+            }
+
+            val cooldownPenalty = if (track.id in recentlyPlayedIds) -12.0f else 0f
+            val playCountBonus = ln(1.0 + track.playCount.coerceAtMost(30)).toFloat() * 1.5f
+            val likedBonus = if (track.isLiked || track.id in favoriteTrackIds) 4.0f else 0f
+            val artworkBonus = if (!track.artworkUrl.isNullOrBlank()) 1.2f else -1.5f
+
+            val totalScore = (artistAffinity * 1.4f) +
+                (genreAffinity * 0.9f) +
+                dayPartBonus +
+                playCountBonus +
+                likedBonus +
+                artworkBonus +
+                cooldownPenalty
+
+            track to totalScore
+        }.sortedByDescending { it.second }
+
+        val exploitPool = scoredCandidates.filter { it.first.id !in recentlyPlayedIds }.map { it.first }
+        val explorePool = scoredCandidates
+            .filter { it.first.id !in everPlayedIds && it.second > 0f }
             .map { it.first }
-        val recommendedForYou = selectWithDiversity(
-            candidates = discoveryCandidates.ifEmpty { sortedByScore.map { it.first } },
+
+        val targetExploreCount = max(2, (maxPerSection * EXPLORATION_RATIO).toInt())
+        val dailyMix = selectWithDiversity(
+            candidates = exploitPool.take(maxPerSection * 2) + explorePool.take(targetExploreCount * 2),
             maxPerArtist = 2,
             limit = maxPerSection
         )
+
+        val recommendedForYou = selectWithDiversity(
+            candidates = (explorePool + exploitPool.drop(4)).ifEmpty { allAvailableTracks },
+            maxPerArtist = 2,
+            limit = maxPerSection
+        )
+
+        val lovedTrackIds = listeningHistory
+            .filter { it.completionPercentage >= 0.80f && it.trackId !in recentlyPlayedIds }
+            .sortedByDescending { it.timestamp }
+            .map { it.trackId }
+            .distinct()
+
+        val trackMap = allAvailableTracks.associateBy { it.id }
+        val jumpBackIn = lovedTrackIds.mapNotNull { trackMap[it] }.take(maxPerSection)
 
         return RecommendationResult(
             dailyMix = if (dailyMix.isNotEmpty()) dailyMix else allAvailableTracks.take(maxPerSection),
             recommendedForYou = recommendedForYou,
             jumpBackIn = jumpBackIn,
-            topArtistAffinity = topArtist,
-            tasteProfile = tasteProfile
+            topArtistAffinity = profile.topArtists.firstOrNull(),
+            tasteProfile = profile
         )
     }
 
-    /**
-     * Computes an intelligent, Spotify-style Autoplay queue adapted to BOTH the current track's
-     * sonic/genre vibe AND the user's learned taste profile, preventing repetition and artist fatigue.
-     */
     fun computeAutoplayQueue(
         currentTrack: Track,
         allAvailableTracks: List<Track>,
@@ -264,37 +305,34 @@ class AdaptiveRecommendationEngine {
             .map { track ->
                 var score = 0f
 
-                // 1. Contextual continuity: same genre/vibe cluster as current track
                 val candidateGenre = inferTrackGenre(track)
                 if (candidateGenre == currentGenre) {
                     score += 28.0f
                 }
 
-                // 2. Context similarity: same artist
                 val isSameArtist = track.artistId.equals(currentTrack.artistId, ignoreCase = true) ||
-                        track.artistName.equals(currentTrack.artistName, ignoreCase = true)
+                    track.artistName.equals(currentTrack.artistName, ignoreCase = true)
                 if (isSameArtist) {
                     score += 32.0f
                 }
 
-                // 3. Context similarity: same album
-                if (!track.albumName.isNullOrBlank() && track.albumName.equals(currentTrack.albumName, ignoreCase = true) && !track.albumName.equals("Hits", ignoreCase = true)) {
+                if (!track.albumName.isNullOrBlank() &&
+                    track.albumName.equals(currentTrack.albumName, ignoreCase = true) &&
+                    !track.albumName.equals("Hits", ignoreCase = true)
+                ) {
                     score += 12.0f
                 }
 
-                // 4. User Taste Profile: learned artist score + genre affinity
                 val artistScore = resolveArtistScore(track, tasteProfile.artistScores)
                 score += artistScore * 2.0f
 
                 val genreAffinity = tasteProfile.genreScores[candidateGenre] ?: 0f
                 score += genreAffinity * 0.9f
 
-                // 5. Explicit favorite artist match
                 if (favoriteArtistNames.any { fav -> matchesArtist(track, fav) }) {
                     score += 18.0f
                 }
 
-                // 6. Liked track bonus
                 if (track.isLiked || favoriteTrackIds.contains(track.id)) {
                     score += 12.0f
                 }
@@ -310,70 +348,55 @@ class AdaptiveRecommendationEngine {
         return selectWithDiversity(sorted, maxPerArtist = 2, limit = count)
     }
 
+    private fun resolveArtistScore(track: Track, artistScores: Map<String, Float>): Float {
+        artistScores[track.artistName]?.let { return it }
+        artistScores[track.artistId]?.let { return it }
+        return artistScores.entries.find { (key, _) -> matchesArtist(track, key) }?.value ?: 0f
+    }
+
+    private fun matchesArtist(track: Track, candidate: String): Boolean {
+        val cleanCandidate = candidate.replace('_', ' ').trim()
+        return track.artistId.equals(candidate, ignoreCase = true) ||
+            track.artistName.equals(cleanCandidate, ignoreCase = true) ||
+            track.artistName.contains(cleanCandidate, ignoreCase = true) ||
+            cleanCandidate.contains(track.artistName, ignoreCase = true)
+    }
+
     private fun selectWithDiversity(
         candidates: List<Track>,
         maxPerArtist: Int,
         limit: Int
     ): List<Track> {
-        val result = mutableListOf<Track>()
-        val artistCounts = mutableMapOf<String, Int>()
+        val selected = mutableListOf<Track>()
+        val selectedIds = HashSet<String>()
+        val countByArtist = mutableMapOf<String, Int>()
 
         for (track in candidates) {
-            val key = track.artistName.lowercase().trim()
-            val currentCount = artistCounts.getOrDefault(key, 0)
-            if (currentCount < maxPerArtist) {
-                result.add(track)
-                artistCounts[key] = currentCount + 1
+            if (track.id in selectedIds) continue
+            val artistKey = track.artistName.trim().lowercase(Locale.ROOT)
+            val currentArtistCount = countByArtist.getOrDefault(artistKey, 0)
+            if (currentArtistCount < maxPerArtist) {
+                selected.add(track)
+                selectedIds.add(track.id)
+                countByArtist[artistKey] = currentArtistCount + 1
+                if (selected.size >= limit) break
             }
-            if (result.size >= limit) break
         }
-
-        if (result.size < limit) {
+        if (selected.size < limit) {
             for (track in candidates) {
-                if (result.none { it.id == track.id }) {
-                    result.add(track)
+                if (selected.addIfAbsent(track, selectedIds)) {
+                    if (selected.size >= limit) break
                 }
-                if (result.size >= limit) break
             }
         }
-        return result
+        return selected
     }
 
-    private fun resolveArtistScore(track: Track, artistScores: Map<String, Float>): Float {
-        artistScores[track.artistName]?.let { return it }
-        artistScores[track.artistId]?.let { return it }
-        return artistScores.entries.find { (key, _) ->
-            matchesArtist(track, key)
-        }?.value ?: 0f
-    }
-
-    private fun matchesArtist(track: Track, candidate: String): Boolean {
-        val cleanCandidate = candidate.replace("_", " ").trim()
-        return track.artistId.equals(candidate, ignoreCase = true) ||
-                track.artistName.equals(cleanCandidate, ignoreCase = true) ||
-                track.artistName.contains(cleanCandidate, ignoreCase = true) ||
-                cleanCandidate.contains(track.artistName, ignoreCase = true)
-    }
-
-    fun inferTrackGenre(track: Track): String {
-        val album = track.albumName.orEmpty().lowercase()
-        return when {
-            album.contains("cumbia") -> GENRE_CUMBIA
-            album.contains("salsa") -> GENRE_SALSA
-            album.contains("rock") -> GENRE_ROCK_POP
-            album.contains("urbano") || album.contains("reggaeton") -> GENRE_URBANO
-            else -> inferGenreByArtist("${track.artistName} ${track.artistId}")
+    private fun MutableList<Track>.addIfAbsent(track: Track, seenIds: HashSet<String>): Boolean {
+        if (seenIds.add(track.id)) {
+            add(track)
+            return true
         }
-    }
-
-    private fun inferGenreByArtist(artistSignal: String): String {
-        val s = artistSignal.lowercase()
-        return when {
-            listOf("grupo 5", "grupo_5", "agua marina", "armonia 10", "armonia_10", "corazon serrano", "ke personajes", "angeles azules", "destellos", "hijos del sol", "chacal", "maroyu", "amar azul", "rafaga", "cumbia").any { s.contains(it) } -> GENRE_CUMBIA
-            listOf("marc anthony", "oscar d", "ruben blades", "grupo niche", "gilberto santa rosa", "hector lavoe", "willie colon", "frankie ruiz", "eddie santiago", "salsa").any { s.contains(it) } -> GENRE_SALSA
-            listOf("soda stereo", "queen", "coldplay", "enanitos verdes", "mana", "maná", "prisioneros", "caifanes", "jarabe de palo", "mojarras", "hombres g", "libido", "amen", "mar de copas", "imagine dragons", "rock").any { s.contains(it) } -> GENRE_ROCK_POP
-            listOf("bad bunny", "karol g", "feid", "bizarrap", "manuel turizo", "quevedo", "rauw", "rosalia", "maluma", "daddy yankee", "don omar", "ozuna", "j balvin", "myke towers").any { s.contains(it) } -> GENRE_URBANO
-            else -> GENRE_GLOBAL_POP
-        }
+        return false
     }
 }

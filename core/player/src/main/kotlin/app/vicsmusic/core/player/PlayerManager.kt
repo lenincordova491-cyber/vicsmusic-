@@ -1,14 +1,18 @@
 package app.vicsmusic.core.player
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -48,6 +52,13 @@ class PlayerManager @Inject constructor(
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
+    private var prepareJob: Job? = null
+    private var sleepTimerJob: Job? = null
+    private var prewarmedTrackId: String? = null
+
+    private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
+    val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs.asStateFlow()
+    private var pauseAtEndOfCurrentTrack: Boolean = false
 
     @Volatile
     private var _exoPlayer: ExoPlayer? = null
@@ -62,6 +73,42 @@ class PlayerManager @Inject constructor(
                 _exoPlayer ?: createExoPlayer().also { _exoPlayer = it }
             }
         }
+
+    /**
+     * ForwardingPlayer for MediaSession so Android System Notification, Lock Screen,
+     * Bluetooth headsets, and Android Auto always enable and route Next/Previous buttons.
+     */
+    val sessionPlayer: Player by lazy {
+        object : ForwardingPlayer(exoPlayer) {
+            override fun getAvailableCommands(): Player.Commands {
+                val queue = queueManager.state.value
+                return super.getAvailableCommands().buildUpon()
+                    .apply {
+                        if (queue.hasNext || queue.items.isNotEmpty()) add(Player.COMMAND_SEEK_TO_NEXT)
+                        if (queue.hasPrevious || queue.items.isNotEmpty()) add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    }
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .build()
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean {
+                val queue = queueManager.state.value
+                return when (command) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> queue.hasNext || queue.items.isNotEmpty()
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> queue.hasPrevious || queue.items.isNotEmpty()
+                    else -> super.isCommandAvailable(command)
+                }
+            }
+
+            override fun seekToNext() = playNext()
+            override fun seekToNextMediaItem() = playNext()
+            override fun seekToPrevious() = playPrevious()
+            override fun seekToPreviousMediaItem() = playPrevious()
+        }
+    }
 
     private fun createExoPlayer(): ExoPlayer {
         val cacheDataSourceFactory = playerCacheManager.createCacheDataSourceFactory()
@@ -185,14 +232,32 @@ class PlayerManager @Inject constructor(
         }
     }
 
+    private fun resolveNetworkQuality(
+        wifiQuality: AudioQuality,
+        cellularQuality: AudioQuality
+    ): AudioQuality {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return wifiQuality
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return cellularQuality
+        return if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        ) {
+            wifiQuality
+        } else {
+            cellularQuality
+        }
+    }
+
     private fun prepareAndPlay(track: Track) {
         recordCurrentTrackFeedback()
+        prepareJob?.cancel()
 
         _playbackState.value = _playbackState.value.copy(
             status = PlaybackStatus.BUFFERING,
             currentTrack = track,
             positionMs = 0L,
-            durationMs = track.durationMs
+            durationMs = track.durationMs,
+            errorMessage = null
         )
 
         // Seamless queue lookahead: if fewer than 5 tracks remain ahead in queue, prefetch autoplay
@@ -202,12 +267,20 @@ class PlayerManager @Inject constructor(
             triggerAutoplay(track, autoPlayNext = false)
         }
 
-        scope.launch {
+        prepareJob = scope.launch {
             // Ensure track metadata is always saved in DB so history/favorites never lose title/artist
             musicRepository.seedCatalogTracks(listOf(track))
 
-            val streamResult = musicRepository.getStreamInfo(track.id, AudioQuality.HIGH)
+            val prefs = runCatching { userPreferencesRepository.userPreferences.first() }.getOrNull()
+            val targetQuality = if (prefs != null) {
+                resolveNetworkQuality(prefs.wifiQuality, prefs.cellularQuality)
+            } else {
+                AudioQuality.HIGH
+            }
+
+            val streamResult = musicRepository.getStreamInfo(track.id, targetQuality)
             streamResult.onSuccess { streamInfo ->
+                if (!isActive) return@onSuccess
                 if (streamInfo.headers.isNotEmpty()) {
                     playerCacheManager.updateRequestHeaders(streamInfo.headers)
                 }
@@ -232,7 +305,15 @@ class PlayerManager @Inject constructor(
                 player.prepare()
                 player.playWhenReady = true
                 player.play()
+
+                val crossfadeSec = prefs?.crossfadeDurationSeconds ?: 0
+                if (crossfadeSec > 0) {
+                    applyCrossfadeIn(crossfadeSec)
+                } else {
+                    player.volume = 1f
+                }
             }.onFailure { error ->
+                if (!isActive) return@onFailure
                 android.util.Log.e("PlayerManager", "Stream extraction failed for ${track.id}: ${error.message}", error)
                 _playbackState.value = _playbackState.value.copy(
                     status = PlaybackStatus.ERROR,
@@ -240,6 +321,56 @@ class PlayerManager @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun applyCrossfadeIn(seconds: Int) {
+        scope.launch {
+            val steps = (seconds * 10).coerceIn(5, 120)
+            val stepDelay = (seconds * 1000L) / steps
+            for (i in 1..steps) {
+                if (!exoPlayer.isPlaying) break
+                exoPlayer.volume = i.toFloat() / steps
+                delay(stepDelay)
+            }
+            exoPlayer.volume = 1f
+        }
+    }
+
+    fun startSleepTimer(minutes: Int, stopAtEndOfTrack: Boolean = false) {
+        sleepTimerJob?.cancel()
+        pauseAtEndOfCurrentTrack = stopAtEndOfTrack
+        if (stopAtEndOfTrack) {
+            val remaining = (exoPlayer.duration - exoPlayer.currentPosition).coerceAtLeast(0L)
+            _sleepTimerRemainingMs.value = remaining
+            return
+        }
+        if (minutes <= 0) {
+            _sleepTimerRemainingMs.value = null
+            return
+        }
+        sleepTimerJob = scope.launch {
+            var remainingMs = minutes * 60_000L
+            while (remainingMs > 0 && isActive) {
+                _sleepTimerRemainingMs.value = remainingMs
+                delay(1_000L)
+                remainingMs -= 1_000L
+            }
+            _sleepTimerRemainingMs.value = null
+            for (i in 20 downTo 1) {
+                exoPlayer.volume = i / 20f
+                delay(100L)
+            }
+            pause()
+            exoPlayer.volume = 1f
+        }
+    }
+
+    fun setPlaybackParameters(speed: Float, pitch: Float = 1.0f, skipSilence: Boolean = false) {
+        exoPlayer.playbackParameters = PlaybackParameters(
+            speed.coerceIn(0.5f, 2.0f),
+            pitch.coerceIn(0.5f, 2.0f)
+        )
+        exoPlayer.skipSilenceEnabled = skipSilence
     }
 
     fun play() {
@@ -451,8 +582,20 @@ class PlayerManager @Inject constructor(
                     durationMs = duration
                 )
 
-                // Seamless prefetch: 15 seconds before the final track of the queue finishes
+                // Next Track Pre-warming at 75% duration for instant (<100ms) transition
                 val qState = queueManager.state.value
+                val nextIndex = qState.currentIndex + 1
+                if (duration > 20_000L && currentPos >= (duration * 3) / 4 && nextIndex in qState.items.indices) {
+                    val nextTrack = qState.items[nextIndex]
+                    if (prewarmedTrackId != nextTrack.id) {
+                        prewarmedTrackId = nextTrack.id
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { musicRepository.getStreamInfo(nextTrack.id, AudioQuality.HIGH) }
+                        }
+                    }
+                }
+
+                // Seamless prefetch: 15 seconds before the final track of the queue finishes
                 val isLastTrack = qState.currentIndex >= qState.items.lastIndex
                 if (isLastTrack && duration > 20_000L && currentPos >= duration - 15_000L) {
                     val curTrack = qState.currentTrack
@@ -461,7 +604,7 @@ class PlayerManager @Inject constructor(
                     }
                 }
 
-                delay(500)
+                delay(200)
             }
         }
     }

@@ -4,12 +4,16 @@ import app.vicsmusic.core.model.LyricLine
 import app.vicsmusic.core.model.Lyrics
 
 /**
- * Standard parser for LRC (Lyric) format strings containing timestamped lines:
- * e.g., `[01:23.45] Some lyrics line` or `[01:23.456] Some lyrics line`
+ * Enhanced LRC parser supporting:
+ * - [mm:ss.xx], [mm:ss.xxx], and [mm:ss:xx]
+ * - Global [offset:+/-ms] tags
+ * - Multiple timestamps on a single line (e.g., [00:15.20][01:15.20]Chorus)
+ * - Smooth time-interpolated fallback for plain lyrics
  */
 object LrcParser {
 
-    private val LRC_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)""")
+    private val TIMESTAMP_REGEX = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+    private val OFFSET_REGEX = Regex("\\[offset:\\s*([+-]?\\d+)\\s*]", RegexOption.IGNORE_CASE)
 
     fun parse(
         trackId: String,
@@ -35,7 +39,7 @@ object LrcParser {
         if (!fallbackPlain.isNullOrBlank()) {
             val rawLines = fallbackPlain.lineSequence()
                 .map { it.trim() }
-                .filter { it.isNotEmpty() }
+                .filter { it.isNotEmpty() && !it.startsWith("[") }
                 .toList()
             if (rawLines.isNotEmpty()) {
                 val effectiveDuration = if (durationMs > 15_000L) durationMs else 210_000L
@@ -61,26 +65,36 @@ object LrcParser {
         )
     }
 
-    private fun parseLrcLines(lrc: String): List<LyricLine> {
-        val result = mutableListOf<LyricLine>()
-        for (rawLine in lrc.lines()) {
+    fun parseLrcLines(rawLrc: String): List<LyricLine> {
+        if (rawLrc.isBlank()) return emptyList()
+        val globalOffsetMs = OFFSET_REGEX.find(rawLrc)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val parsedLines = mutableListOf<LyricLine>()
+
+        for (rawLine in rawLrc.lineSequence()) {
             val trimmed = rawLine.trim()
             if (trimmed.isEmpty()) continue
+            val matches = TIMESTAMP_REGEX.findAll(trimmed).toList()
+            if (matches.isEmpty()) continue
 
-            val match = LRC_REGEX.matchEntire(trimmed) ?: continue
-            val minutes = match.groupValues[1].toLongOrNull() ?: 0L
-            val seconds = match.groupValues[2].toLongOrNull() ?: 0L
-            val fractionStr = match.groupValues[3]
-            val millis = when (fractionStr.length) {
-                0 -> 0L
-                1 -> (fractionStr.toLongOrNull() ?: 0L) * 100L
-                2 -> (fractionStr.toLongOrNull() ?: 0L) * 10L
-                else -> (fractionStr.take(3).toLongOrNull() ?: 0L)
+            val textStart = matches.last().range.last + 1
+            val lyricText = trimmed.substring(textStart).trim()
+            if (lyricText.isEmpty()) continue
+
+            for (match in matches) {
+                val minutes = match.groupValues[1].toLongOrNull() ?: 0L
+                val seconds = match.groupValues[2].toLongOrNull() ?: 0L
+                val fractionStr = match.groupValues[3]
+                val millis = when (fractionStr.length) {
+                    1 -> (fractionStr.toLongOrNull() ?: 0L) * 100L
+                    2 -> (fractionStr.toLongOrNull() ?: 0L) * 10L
+                    3 -> fractionStr.toLongOrNull() ?: 0L
+                    else -> 0L
+                }
+                val timeMs = ((minutes * 60_000L) + (seconds * 1_000L) + millis - globalOffsetMs)
+                    .coerceAtLeast(0L)
+                parsedLines.add(LyricLine(timeMs = timeMs, text = lyricText))
             }
-            val text = match.groupValues[4].trim()
-            val timeMs = (minutes * 60 + seconds) * 1000L + millis
-            result.add(LyricLine(timeMs = timeMs, text = text))
         }
-        return result.sortedBy { it.timeMs }
+        return parsedLines.sortedBy { it.timeMs }
     }
 }

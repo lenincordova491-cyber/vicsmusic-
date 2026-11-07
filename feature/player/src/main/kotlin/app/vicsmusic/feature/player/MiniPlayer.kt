@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.vicsmusic.core.model.PlaybackState
+import app.vicsmusic.core.model.PlaybackStatus
 import app.vicsmusic.core.ui.R
 import app.vicsmusic.core.ui.component.ArtworkImage
 
@@ -123,15 +125,23 @@ fun MiniPlayer(
                         onClick = onPlayPauseClick,
                         modifier = Modifier.size(40.dp)
                     ) {
-                        Icon(
-                            imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (playbackState.isPlaying) {
-                                stringResource(R.string.pause)
-                            } else {
-                                stringResource(R.string.play)
-                            },
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        if (playbackState.status == PlaybackStatus.BUFFERING) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playbackState.isPlaying) {
+                                    stringResource(R.string.pause)
+                                } else {
+                                    stringResource(R.string.play)
+                                },
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
 
                     IconButton(

@@ -152,7 +152,27 @@ class MusicRepositoryImpl @Inject constructor(
                 val sourceId = cachedTrack?.sourceId ?: resolveSourceId(trackId)
                 val source = sourceRegistry.getSource(sourceId)
                     ?: throw IllegalStateException("Music source '$sourceId' not available for track $trackId")
-                source.getStream(trackId, quality).getOrThrow()
+
+                val primaryResult = source.getStream(trackId, quality)
+                if (primaryResult.isSuccess) {
+                    return@runCatching primaryResult.getOrThrow()
+                }
+
+                // Self-healing fallback: if a remote track ID is stale or region-blocked,
+                // resolve by title + artist on YouTube Music and stream the first playable match.
+                if (sourceId != "local" && cachedTrack != null && cachedTrack.title.isNotBlank()) {
+                    val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID) ?: source
+                    val query = "${cachedTrack.title} ${cachedTrack.artistName}".trim()
+                    val candidates = ytSource.search(query, SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                    for (candidate in candidates.take(3)) {
+                        val fallbackStream = ytSource.getStream(candidate.id, quality).getOrNull()
+                        if (fallbackStream != null) {
+                            return@runCatching fallbackStream.copy(trackId = trackId)
+                        }
+                    }
+                }
+
+                primaryResult.getOrThrow()
             }
         }
 
@@ -316,6 +336,15 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
+            val obsoleteIds = listOf(
+                "yt_bL18EwQ4s1c", "yt_E7wJTI-1dvQ", "yt_fV-w75x1k9g",
+                "yt_gG08o-M6h_w", "yt_xG8_l7M4k58", "yt_k5v3h7f9x2w",
+                "yt_c8_v2k4f7mA", "yt_ca48oMV5GwY", "yt_c4_z9x1k2bA",
+                "yt_A_g3lMcWUCE", "yt_TIW_y3z8s70"
+            )
+            for (oldId in obsoleteIds) {
+                trackDao.deleteTrack(oldId)
+            }
             val existingTracks = trackDao.getAllTracks().firstOrNull().orEmpty().associateBy { it.id }
             val entitiesToUpsert = tracks.map { track ->
                 val existing = existingTracks[track.id]

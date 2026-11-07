@@ -36,6 +36,23 @@ object InnerTubeClients {
     )
 
     /**
+     * Android Testsuite client: top priority for direct non-ciphered, non-restricted audio streams.
+     * Verified with live 206 stream response: 2026-11-06
+     */
+    val ANDROID_TESTSUITE = InnerTubeClientProfile(
+        clientName = "ANDROID_TESTSUITE",
+        clientVersion = "1.9",
+        clientId = 82,
+        userAgent = "Google/1.0",
+        baseUrl = "https://www.youtube.com/youtubei/v1",
+        deviceMake = "Google",
+        deviceModel = "Pixel 7",
+        osName = "Android",
+        osVersion = "14",
+        androidSdkVersion = 34
+    )
+
+    /**
      * VisionOS client: top priority for direct adaptive streams without SABR/cipher.
      * Verified with X-Goog-Visitor-Id: 2026-11-06
      */
@@ -87,20 +104,21 @@ object InnerTubeClients {
     )
 
     /**
-     * Android client: standard mobile client fallback.
-     * Verified: 2026-11-05
+     * Android client: Primary verified client for direct adaptive audio streams (itag 140/251)
+     * without signatureCipher or bot-login prompts.
+     * Verified HTTP 206 Partial Content: 2026-11-06
      */
     val ANDROID = InnerTubeClientProfile(
         clientName = "ANDROID",
-        clientVersion = "21.26.364",
+        clientVersion = "20.10.38",
         clientId = 3,
-        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 14; Pixel 8 Pro Build/UD1A.231105.004) gzip",
+        userAgent = "com.google.android.youtube/20.10.38 (Linux; U; Android 13; en_US)",
         baseUrl = "https://www.youtube.com/youtubei/v1",
         deviceMake = "Google",
-        deviceModel = "Pixel 8 Pro",
+        deviceModel = "Pixel 7",
         osName = "Android",
-        osVersion = "14",
-        androidSdkVersion = 34
+        osVersion = "13",
+        androidSdkVersion = 33
     )
 
     /**
@@ -118,12 +136,13 @@ object InnerTubeClients {
 
     /**
      * Ordered fallback chain used to resolve playable audio streams.
-     * Priority order: ANDROID_VR -> IOS -> ANDROID -> TVHTML5 -> VISIONOS
+     * Priority order: ANDROID (20.10.38) -> IOS -> WEB_REMIX -> ANDROID_VR -> TVHTML5 -> VISIONOS
      */
     val STREAM_CLIENTS: List<InnerTubeClientProfile> = listOf(
-        ANDROID_VR,
-        IOS,
         ANDROID,
+        IOS,
+        WEB_REMIX,
+        ANDROID_VR,
         TVHTML5,
         VISIONOS
     )

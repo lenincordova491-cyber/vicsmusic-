@@ -40,7 +40,7 @@ data class PlayerResult(
     val expiresInSeconds: Long?,
     val videoDetails: RemoteTrack?
 ) {
-    val isPlayable: Boolean get() = playabilityStatus == STATUS_OK && audioFormats.isNotEmpty()
+    val isPlayable: Boolean get() = audioFormats.isNotEmpty()
 
     companion object {
         const val STATUS_OK = "OK"
@@ -190,7 +190,12 @@ object InnerTubeParser {
 
     fun parsePlayer(root: JsonObject): PlayerResult {
         val streamingData = root.obj("streamingData")
-        val formats = streamingData.arr("adaptiveFormats").orEmpty().mapNotNull(::parseAudioFormat)
+        val adaptive = streamingData.arr("adaptiveFormats").orEmpty().mapNotNull(::parseAudioFormat)
+        val formats = if (adaptive.isNotEmpty()) {
+            adaptive
+        } else {
+            streamingData.arr("formats").orEmpty().mapNotNull(::parseProgressiveAudioFormat)
+        }
 
         return PlayerResult(
             playabilityStatus = root.str("playabilityStatus", "status") ?: "UNKNOWN",
@@ -204,8 +209,6 @@ object InnerTubeParser {
     private fun parseAudioFormat(element: JsonElement): AudioFormat? {
         val rawMime = element.str("mimeType") ?: return null
         if (!rawMime.startsWith("audio/")) return null
-        // Formats exposing only "signatureCipher" are skipped on purpose:
-        // stream clients are chosen so that a direct URL is always present.
         val url = element.str("url") ?: return null
         val itag = element.long("itag")?.toInt() ?: return null
 
@@ -219,6 +222,26 @@ object InnerTubeParser {
             mimeType = mimeType,
             codecs = codecs,
             bitrate = (element.long("averageBitrate") ?: element.long("bitrate") ?: 0L).toInt(),
+            contentLength = element.long("contentLength")
+        )
+    }
+
+    private fun parseProgressiveAudioFormat(element: JsonElement): AudioFormat? {
+        val rawMime = element.str("mimeType") ?: return null
+        val url = element.str("url") ?: return null
+        val itag = element.long("itag")?.toInt() ?: return null
+        if (itag !in listOf(18, 22, 140, 251, 250, 249)) return null
+
+        val mimeType = rawMime.substringBefore(';').trim()
+        val codecs = rawMime.substringAfter("codecs=", "")
+            .trim().trim('"').takeIf { it.isNotEmpty() }
+
+        return AudioFormat(
+            itag = itag,
+            url = url,
+            mimeType = mimeType,
+            codecs = codecs,
+            bitrate = (element.long("averageBitrate") ?: element.long("bitrate") ?: 128_000L).toInt(),
             contentLength = element.long("contentLength")
         )
     }

@@ -38,6 +38,10 @@ class PlayerCacheManager @Inject constructor(
     }
 
     fun updateRequestHeaders(headers: Map<String, String>) {
+        val ua = headers["User-Agent"] ?: headers["user-agent"]
+        if (!ua.isNullOrBlank()) {
+            httpDataSourceFactory.setUserAgent(ua)
+        }
         httpDataSourceFactory.setDefaultRequestProperties(headers)
     }
 

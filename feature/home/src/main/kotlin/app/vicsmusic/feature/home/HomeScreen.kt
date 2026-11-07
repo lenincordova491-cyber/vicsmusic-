@@ -160,7 +160,7 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Spotify Category Filter Chips ("Todos", "Música", "Podcasts", "Descargas")
+            // 2. Spotify Category Filter Chips ("Todos", "Música", "En el dispositivo", "Descargas", "Podcasts")
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -175,16 +175,16 @@ fun HomeScreen(
                     }
                     item {
                         SpotifyFilterChip(
-                            label = "Música",
+                            label = "Música Online",
                             selected = uiState.selectedFilter == HomeCategoryFilter.MUSIC,
                             onClick = { onFilterSelected(HomeCategoryFilter.MUSIC) }
                         )
                     }
                     item {
                         SpotifyFilterChip(
-                            label = "Podcasts",
-                            selected = uiState.selectedFilter == HomeCategoryFilter.PODCASTS,
-                            onClick = { onFilterSelected(HomeCategoryFilter.PODCASTS) }
+                            label = "En el dispositivo (${uiState.localTracks.size})",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.LOCAL,
+                            onClick = { onFilterSelected(HomeCategoryFilter.LOCAL) }
                         )
                     }
                     item {
@@ -192,6 +192,13 @@ fun HomeScreen(
                             label = "Descargas (Offline)",
                             selected = uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS,
                             onClick = { onFilterSelected(HomeCategoryFilter.DOWNLOADS) }
+                        )
+                    }
+                    item {
+                        SpotifyFilterChip(
+                            label = "Podcasts",
+                            selected = uiState.selectedFilter == HomeCategoryFilter.PODCASTS,
+                            onClick = { onFilterSelected(HomeCategoryFilter.PODCASTS) }
                         )
                     }
                 }
@@ -345,7 +352,49 @@ fun HomeScreen(
                 }
             }
 
-            // 10. Podcasts Empty State
+            // 9b. "Salsa Clásica y Bailable" Carousel
+            if (uiState.salsaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item {
+                    SectionHeader(title = "Salsa Clásica y Bailable")
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.salsaTracks, key = { "salsa_${it.id}" }) { track ->
+                            MediaCard(
+                                track = track,
+                                onClick = { onTrackClick(track, uiState.salsaTracks) },
+                                onDownloadClick = { onDownloadTrack(track) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 10. Archivos Locales del Dispositivo (Separados del streaming online)
+            if (uiState.selectedFilter == HomeCategoryFilter.LOCAL || (uiState.selectedFilter == HomeCategoryFilter.ALL && uiState.localTracks.isNotEmpty())) {
+                item {
+                    SectionHeader(title = "Archivos en tu dispositivo (Música Local)")
+                }
+                if (uiState.localTracks.isEmpty()) {
+                    item {
+                        EmptyContent(
+                            title = "Sin archivos locales detectados",
+                            message = "Tus archivos de audio locales aparecerán aquí sin mezclarse con el catálogo online.",
+                            modifier = Modifier.fillMaxWidth().height(180.dp)
+                        )
+                    }
+                } else {
+                    items(uiState.localTracks, key = { "local_${it.id}" }) { track ->
+                        TrackRow(
+                            track = track,
+                            onClick = { onTrackClick(track, uiState.localTracks) }
+                        )
+                    }
+                }
+            }
+
+            // 11. Podcasts Empty State
             if (uiState.selectedFilter == HomeCategoryFilter.PODCASTS) {
                 item {
                     EmptyContent(

@@ -195,6 +195,9 @@ class PlayerManager @Inject constructor(
         }
 
         scope.launch {
+            // Ensure track metadata is always saved in DB so history/favorites never lose title/artist
+            musicRepository.seedCatalogTracks(listOf(track))
+
             val streamResult = musicRepository.getStreamInfo(track.id, AudioQuality.HIGH)
             streamResult.onSuccess { streamInfo ->
                 if (streamInfo.headers.isNotEmpty()) {
@@ -224,7 +227,7 @@ class PlayerManager @Inject constructor(
                 android.util.Log.e("PlayerManager", "Stream extraction failed for ${track.id}: ${error.message}", error)
                 _playbackState.value = _playbackState.value.copy(
                     status = PlaybackStatus.ERROR,
-                    errorMessage = error.localizedMessage ?: "Error cargando streaming de audio"
+                    errorMessage = "No se pudo reproducir '${track.title}'"
                 )
             }
         }
@@ -297,14 +300,24 @@ class PlayerManager @Inject constructor(
                 val allTracks = musicRepository.getAllTracks().firstOrNull() ?: emptyList()
                 val listeningEvents = musicRepository.getPlayHistory(50).firstOrNull() ?: emptyList()
 
-                var candidateTracks = allTracks
-                val currentArtistTracks = allTracks.filter {
-                    it.artistName.equals(current.artistName, ignoreCase = true) ||
-                    it.artistId.equals(current.artistId, ignoreCase = true)
+                val isLocalTrack = current.sourceId == "local"
+                val sameSourceTracks = if (isLocalTrack) {
+                    allTracks.filter { it.sourceId == "local" }
+                } else {
+                    allTracks.filter { it.sourceId != "local" }
                 }
-                if (currentArtistTracks.size < 4) {
-                    val searchResult = musicRepository.searchTracks(current.artistName).getOrNull() ?: emptyList()
-                    candidateTracks = (allTracks + searchResult).distinctBy { it.id }
+
+                var candidateTracks = sameSourceTracks
+                if (!isLocalTrack) {
+                    val currentArtistTracks = sameSourceTracks.filter {
+                        it.artistName.equals(current.artistName, ignoreCase = true) ||
+                        it.artistId.equals(current.artistId, ignoreCase = true)
+                    }
+                    if (currentArtistTracks.size < 4) {
+                        val searchResult = musicRepository.searchTracks(current.artistName).getOrNull().orEmpty()
+                            .filter { it.sourceId != "local" }
+                        candidateTracks = (sameSourceTracks + searchResult).distinctBy { it.id }
+                    }
                 }
 
                 val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
@@ -318,11 +331,11 @@ class PlayerManager @Inject constructor(
                     count = 10
                 )
 
-                // Guaranteed fallback pool: ensure autoplay queue never starves
+                // Guaranteed fallback pool within the SAME source type (never mix local and remote)
                 if (autoplayList.isEmpty()) {
-                    val fallbackPool = (candidateTracks + allTracks)
+                    val fallbackPool = candidateTracks
                         .filter { it.id != current.id && !currentQueueIds.contains(it.id) }
-                        .ifEmpty { (candidateTracks + allTracks).filter { it.id != current.id } }
+                        .ifEmpty { candidateTracks.filter { it.id != current.id } }
                     if (fallbackPool.isNotEmpty()) {
                         autoplayList = fallbackPool.shuffled(Random(System.currentTimeMillis())).take(10)
                     }

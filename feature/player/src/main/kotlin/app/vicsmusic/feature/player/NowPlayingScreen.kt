@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +54,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.vicsmusic.core.model.PlaybackState
+import app.vicsmusic.core.model.PlaybackStatus
 import app.vicsmusic.core.model.RepeatMode
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.player.queue.QueueState
@@ -124,13 +127,27 @@ fun NowPlayingScreen(
     val track = playbackState.currentTrack
     var showQueueSheet by remember { mutableStateOf(false) }
 
+    val ambientColors = remember(track?.id) {
+        val palettes = listOf(
+            Color(0xFF1E3A5F), // Deep Indigo
+            Color(0xFF14532D), // Deep Emerald
+            Color(0xFF4C1D95), // Deep Violet
+            Color(0xFF7F1D1D), // Deep Crimson
+            Color(0xFF134E4A), // Deep Teal
+            Color(0xFF78350F)  // Deep Amber
+        )
+        val idx = ((track?.id?.hashCode() ?: 0) and 0x7FFFFFFF) % palettes.size
+        listOf(palettes[idx], Color(0xFF121212), Color(0xFF0A0A0A))
+    }
+
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = Color(0xFF121212)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Brush.verticalGradient(ambientColors))
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -147,24 +164,61 @@ fun NowPlayingScreen(
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Cerrar reproductor",
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = Color.White,
                         modifier = Modifier.size(32.dp)
                     )
                 }
 
-                Text(
-                    text = stringResource(R.string.now_playing),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = stringResource(R.string.now_playing).uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = if (track?.sourceId == "local") "En este dispositivo" else "Streaming HD • Sin anuncios",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1DB954)
+                    )
+                }
 
                 IconButton(onClick = { showQueueSheet = true }) {
                     Icon(
                         imageVector = Icons.Default.QueueMusic,
                         contentDescription = stringResource(R.string.queue),
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = Color.White
                     )
+                }
+            }
+
+            if (playbackState.status == PlaybackStatus.ERROR && !playbackState.errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF7F1D1D)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = playbackState.errorMessage ?: "Error de reproducción",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Siguiente",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1DB954),
+                            modifier = Modifier.clickable { onSkipNextClick() }.padding(start = 8.dp)
+                        )
+                    }
                 }
             }
 
@@ -320,12 +374,20 @@ fun NowPlayingScreen(
                         .clickable(onClick = onPlayPauseClick),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (playbackState.isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    if (playbackState.status == PlaybackStatus.BUFFERING) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (playbackState.isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
 
                 // Next

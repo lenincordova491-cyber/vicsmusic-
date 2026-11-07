@@ -30,6 +30,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -228,18 +230,102 @@ class PlayerManager @Inject constructor(
         _playbackState.value = _playbackState.value.copy(positionMs = positionMs)
     }
 
+    private var isAutoplayFetching = false
+    private val recommendationEngine = app.vicsmusic.core.domain.engine.AdaptiveRecommendationEngine()
+
     fun playNext() {
         val nextTrack = queueManager.skipToNext()
         if (nextTrack != null) {
             prepareAndPlay(nextTrack)
         } else {
-            exoPlayer.stop()
-            audioFocusManager.abandonAudioFocus()
-            _playbackState.value = _playbackState.value.copy(
-                status = PlaybackStatus.IDLE,
-                currentTrack = null,
-                positionMs = 0L
-            )
+            val current = _playbackState.value.currentTrack
+            if (current != null && queueManager.state.value.repeatMode == RepeatMode.OFF) {
+                triggerAutoplay(current, autoPlayNext = true)
+            } else {
+                exoPlayer.stop()
+                audioFocusManager.abandonAudioFocus()
+                _playbackState.value = _playbackState.value.copy(
+                    status = PlaybackStatus.IDLE,
+                    currentTrack = null,
+                    positionMs = 0L
+                )
+            }
+        }
+    }
+
+    private fun triggerAutoplay(current: Track, autoPlayNext: Boolean = false) {
+        if (isAutoplayFetching) return
+        isAutoplayFetching = true
+        scope.launch {
+            try {
+                val prefs = userPreferencesRepository.userPreferences.first()
+                if (!prefs.isAutoplayEnabled) {
+                    if (autoPlayNext) {
+                        exoPlayer.stop()
+                        audioFocusManager.abandonAudioFocus()
+                        _playbackState.value = _playbackState.value.copy(
+                            status = PlaybackStatus.IDLE,
+                            currentTrack = null,
+                            positionMs = 0L
+                        )
+                    }
+                    return@launch
+                }
+
+                val allTracks = musicRepository.getAllTracks().firstOrNull() ?: emptyList()
+                val listeningEvents = musicRepository.getPlayHistory(50).firstOrNull() ?: emptyList()
+
+                var candidateTracks = allTracks
+                val currentArtistTracks = allTracks.filter {
+                    it.artistName.equals(current.artistName, ignoreCase = true) ||
+                    it.artistId.equals(current.artistId, ignoreCase = true)
+                }
+                if (currentArtistTracks.size < 4) {
+                    val searchResult = musicRepository.searchTracks(current.artistName).getOrNull() ?: emptyList()
+                    candidateTracks = (allTracks + searchResult).distinctBy { it.id }
+                }
+
+                val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
+                val autoplayList = recommendationEngine.computeAutoplayQueue(
+                    currentTrack = current,
+                    allAvailableTracks = candidateTracks,
+                    listeningHistory = listeningEvents,
+                    favoriteArtistNames = prefs.favoriteArtistIds,
+                    favoriteTrackIds = candidateTracks.filter { it.isLiked }.map { it.id }.toSet(),
+                    excludedTrackIds = currentQueueIds,
+                    count = 6
+                )
+
+                if (autoplayList.isNotEmpty()) {
+                    queueManager.appendAutoplayTracks(autoplayList)
+                    if (autoPlayNext) {
+                        val nextTrack = queueManager.skipToNext()
+                        if (nextTrack != null) {
+                            prepareAndPlay(nextTrack)
+                        }
+                    }
+                } else if (autoPlayNext) {
+                    exoPlayer.stop()
+                    audioFocusManager.abandonAudioFocus()
+                    _playbackState.value = _playbackState.value.copy(
+                        status = PlaybackStatus.IDLE,
+                        currentTrack = null,
+                        positionMs = 0L
+                    )
+                }
+            } catch (_: Exception) {
+                if (autoPlayNext) {
+                    exoPlayer.stop()
+                    audioFocusManager.abandonAudioFocus()
+                    _playbackState.value = _playbackState.value.copy(
+                        status = PlaybackStatus.IDLE,
+                        currentTrack = null,
+                        positionMs = 0L
+                    )
+                }
+            } finally {
+                isAutoplayFetching = false
+            }
         }
     }
 
@@ -288,10 +374,24 @@ class PlayerManager @Inject constructor(
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive && exoPlayer.isPlaying) {
+                val currentPos = exoPlayer.currentPosition.coerceAtLeast(0L)
+                val duration = if (exoPlayer.duration > 0) exoPlayer.duration else _playbackState.value.durationMs
+
                 _playbackState.value = _playbackState.value.copy(
-                    positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
-                    durationMs = if (exoPlayer.duration > 0) exoPlayer.duration else _playbackState.value.durationMs
+                    positionMs = currentPos,
+                    durationMs = duration
                 )
+
+                // Seamless prefetch: 15 seconds before the final track of the queue finishes
+                val qState = queueManager.state.value
+                val isLastTrack = qState.currentIndex >= qState.items.lastIndex
+                if (isLastTrack && duration > 20_000L && currentPos >= duration - 15_000L) {
+                    val curTrack = qState.currentTrack
+                    if (curTrack != null && qState.repeatMode == RepeatMode.OFF) {
+                        triggerAutoplay(curTrack, autoPlayNext = false)
+                    }
+                }
+
                 delay(500)
             }
         }

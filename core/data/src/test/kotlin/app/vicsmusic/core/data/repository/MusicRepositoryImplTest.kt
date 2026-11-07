@@ -32,6 +32,7 @@ class MusicRepositoryImplTest {
     private val downloadDao: app.vicsmusic.core.database.dao.DownloadDao = mockk(relaxed = true)
     private val lyricsDao: app.vicsmusic.core.database.dao.LyricsDao = mockk(relaxed = true)
     private val playHistoryDao: app.vicsmusic.core.database.dao.PlayHistoryDao = mockk(relaxed = true)
+    private val searchHistoryDao: app.vicsmusic.core.database.dao.SearchHistoryDao = mockk(relaxed = true)
     private val lrclibClient: app.vicsmusic.core.network.LrclibClient = mockk(relaxed = true)
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient = mockk(relaxed = true)
     private val declarativeExtensionManager: app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager = mockk(relaxed = true)
@@ -47,6 +48,7 @@ class MusicRepositoryImplTest {
             downloadDao = downloadDao,
             lyricsDao = lyricsDao,
             playHistoryDao = playHistoryDao,
+            searchHistoryDao = searchHistoryDao,
             sourceRegistry = sourceRegistry,
             lrclibClient = lrclibClient,
             extensionRegistryClient = extensionRegistryClient,

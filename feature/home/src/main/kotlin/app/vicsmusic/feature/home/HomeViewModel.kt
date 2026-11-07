@@ -41,6 +41,7 @@ data class HomeUiState(
     val availableExtensions: List<ExtensionItem> = emptyList(),
     val activeExtensionIds: Set<String> = setOf("ytmusic-spotiflac", "spotify-web", "soundcloud"),
     val isSettingsOpen: Boolean = false,
+    val isAutoplayEnabled: Boolean = true,
     val downloadingTrackId: String? = null,
     val errorMessage: String? = null
 )
@@ -159,7 +160,8 @@ class HomeViewModel @Inject constructor(
                     recommendedTracks = recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() }.ifEmpty { prioritized.takeLast(4) },
                     trendingTracks = currentTrending,
                     downloadedTracks = downloaded,
-                    activeExtensionIds = activeSources
+                    activeExtensionIds = activeSources,
+                    isAutoplayEnabled = prefs.isAutoplayEnabled
                 )
             }.catch { throwable ->
                 _uiState.update {
@@ -215,6 +217,12 @@ class HomeViewModel @Inject constructor(
             }
             _uiState.update { it.copy(activeExtensionIds = current) }
             userPreferencesRepository.setActiveSourceIds(current)
+        }
+    }
+
+    fun toggleAutoplay(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setAutoplayEnabled(enabled)
         }
     }
 

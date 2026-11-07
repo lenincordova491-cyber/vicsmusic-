@@ -3,6 +3,7 @@ package app.vicsmusic.core.player.queue
 import app.vicsmusic.core.database.dao.QueueDao
 import app.vicsmusic.core.database.dao.TrackDao
 import app.vicsmusic.core.database.entity.QueueEntity
+import app.vicsmusic.core.database.model.asEntity
 import app.vicsmusic.core.database.model.asExternalModel
 import app.vicsmusic.core.model.RepeatMode
 import app.vicsmusic.core.model.Track
@@ -22,7 +23,8 @@ data class QueueState(
     val items: List<Track> = emptyList(),
     val currentIndex: Int = -1,
     val isShuffleEnabled: Boolean = false,
-    val repeatMode: RepeatMode = RepeatMode.OFF
+    val repeatMode: RepeatMode = RepeatMode.OFF,
+    val autoplayTrackIds: Set<String> = emptySet()
 ) {
     val currentTrack: Track?
         get() = if (currentIndex in items.indices) items[currentIndex] else null
@@ -93,6 +95,22 @@ class QueueManager @Inject constructor(
         val currentItems = _state.value.items.toMutableList()
         currentItems.add(track)
         _state.value = _state.value.copy(items = currentItems)
+        persistQueue()
+    }
+
+    fun appendAutoplayTracks(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val currentItems = _state.value.items.toMutableList()
+        val existingIds = currentItems.map { it.id }.toSet()
+        val newTracks = tracks.filter { !existingIds.contains(it.id) }
+        if (newTracks.isEmpty()) return
+
+        currentItems.addAll(newTracks)
+        val newAutoplayIds = _state.value.autoplayTrackIds + newTracks.map { it.id }
+        _state.value = _state.value.copy(
+            items = currentItems,
+            autoplayTrackIds = newAutoplayIds
+        )
         persistQueue()
     }
 
@@ -231,6 +249,9 @@ class QueueManager @Inject constructor(
     private fun persistQueue() {
         val currentItems = _state.value.items
         scope.launch {
+            if (currentItems.isNotEmpty()) {
+                trackDao.upsertTracks(currentItems.map { it.asEntity() })
+            }
             queueDao.clearQueue()
             if (currentItems.isNotEmpty()) {
                 val entities = currentItems.mapIndexed { index, track ->

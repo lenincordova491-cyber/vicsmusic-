@@ -47,4 +47,8 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setFavoriteArtists(artists: Set<String>) {
         dataStore.setFavoriteArtists(artists)
     }
+
+    override suspend fun setAutoplayEnabled(enabled: Boolean) {
+        dataStore.setAutoplayEnabled(enabled)
+    }
 }

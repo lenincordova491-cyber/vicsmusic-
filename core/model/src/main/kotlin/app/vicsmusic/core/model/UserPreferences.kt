@@ -41,5 +41,6 @@ data class UserPreferences(
         "musicbrainz"
     ),
     val isOnboardingCompleted: Boolean = false,
-    val favoriteArtistIds: Set<String> = emptySet()
+    val favoriteArtistIds: Set<String> = emptySet(),
+    val isAutoplayEnabled: Boolean = true
 )

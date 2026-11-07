@@ -80,6 +80,7 @@ fun HomeRoute(
         onToggleExtension = viewModel::toggleExtension,
         onDownloadTrack = viewModel::downloadTrack,
         onResetArtistPreferences = viewModel::resetArtistPreferences,
+        onToggleAutoplay = viewModel::toggleAutoplay,
         modifier = modifier
     )
 }
@@ -94,6 +95,7 @@ fun HomeScreen(
     onToggleExtension: (String) -> Unit,
     onDownloadTrack: (Track) -> Unit,
     onResetArtistPreferences: () -> Unit = {},
+    onToggleAutoplay: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -385,7 +387,9 @@ fun HomeScreen(
             SettingsExtensionsDialog(
                 extensions = uiState.availableExtensions,
                 activeIds = uiState.activeExtensionIds,
+                isAutoplayEnabled = uiState.isAutoplayEnabled,
                 onToggle = onToggleExtension,
+                onToggleAutoplay = onToggleAutoplay,
                 onResetArtistPreferences = onResetArtistPreferences,
                 onDismiss = onDismissSettings
             )
@@ -596,7 +600,9 @@ private fun MediaCard(
 private fun SettingsExtensionsDialog(
     extensions: List<ExtensionItem>,
     activeIds: Set<String>,
+    isAutoplayEnabled: Boolean,
     onToggle: (String) -> Unit,
+    onToggleAutoplay: (Boolean) -> Unit,
     onResetArtistPreferences: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -654,6 +660,42 @@ private fun SettingsExtensionsDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SpotifyDarkCard)
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = "Reproducción automática (Autoplay)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Reproduce temas similares y adaptados a tus gustos sin detenerse",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isAutoplayEnabled,
+                            onCheckedChange = onToggleAutoplay,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = SpotifyGreen,
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = SpotifyCardHover
+                            )
+                        )
                     }
                 }
 

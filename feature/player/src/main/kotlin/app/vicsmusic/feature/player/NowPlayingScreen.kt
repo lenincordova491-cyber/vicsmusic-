@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -462,6 +463,31 @@ fun NowPlayingScreen(
                         key = { index, trackItem -> "${trackItem.id}_$index" }
                     ) { index, trackItem ->
                         val isCurrent = index == queueState.currentIndex
+                        val isAutoplay = queueState.autoplayTrackIds.contains(trackItem.id)
+                        val isFirstAutoplay = isAutoplay && (index == 0 || !queueState.autoplayTrackIds.contains(queueState.items[index - 1].id))
+
+                        if (isFirstAutoplay) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Reproducción automática",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "· Similar según tus gustos",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
                         TrackRow(
                             track = trackItem,
                             isPlaying = isCurrent && playbackState.isPlaying,

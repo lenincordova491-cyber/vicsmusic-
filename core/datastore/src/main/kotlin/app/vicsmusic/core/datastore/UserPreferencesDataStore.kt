@@ -32,6 +32,7 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
         val ACTIVE_SOURCE_IDS = stringSetPreferencesKey("active_source_ids")
         val IS_ONBOARDING_COMPLETED = androidx.datastore.preferences.core.booleanPreferencesKey("is_onboarding_completed")
         val FAVORITE_ARTISTS = stringSetPreferencesKey("favorite_artists")
+        val IS_AUTOPLAY_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("is_autoplay_enabled")
     }
 
     private val defaultSources = setOf(
@@ -82,6 +83,7 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
             val activeSources = preferences[PreferencesKeys.ACTIVE_SOURCE_IDS] ?: defaultSources
             val isOnboardingCompleted = preferences[PreferencesKeys.IS_ONBOARDING_COMPLETED] ?: false
             val favoriteArtists = preferences[PreferencesKeys.FAVORITE_ARTISTS] ?: emptySet()
+            val isAutoplayEnabled = preferences[PreferencesKeys.IS_AUTOPLAY_ENABLED] ?: true
 
             UserPreferences(
                 themeMode = themeMode,
@@ -92,9 +94,16 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
                 lastPlayedPositionMs = lastPosition,
                 activeSourceIds = activeSources,
                 isOnboardingCompleted = isOnboardingCompleted,
-                favoriteArtistIds = favoriteArtists
+                favoriteArtistIds = favoriteArtists,
+                isAutoplayEnabled = isAutoplayEnabled
             )
         }
+
+    suspend fun setAutoplayEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_AUTOPLAY_ENABLED] = enabled
+        }
+    }
 
     suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { preferences ->

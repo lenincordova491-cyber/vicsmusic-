@@ -139,7 +139,7 @@ class SearchViewModel @Inject constructor(
         val query = _uiState.value.query.trim().lowercase()
         return when (filter) {
             SearchFilter.ALL -> tracks
-            SearchFilter.TRACKS -> tracks.filter { it.title.lowercase().contains(query) }
+            SearchFilter.TRACKS -> tracks
             SearchFilter.ARTISTS -> tracks.filter { it.artistName.lowercase().contains(query) }
             SearchFilter.ALBUMS -> tracks.filter { it.albumName?.lowercase()?.contains(query) == true }
         }

@@ -4,10 +4,12 @@ import android.content.Context
 import app.vicsmusic.core.database.dao.DownloadDao
 import app.vicsmusic.core.database.dao.LyricsDao
 import app.vicsmusic.core.database.dao.PlayHistoryDao
+import app.vicsmusic.core.database.dao.SearchHistoryDao
 import app.vicsmusic.core.database.dao.TrackDao
 import app.vicsmusic.core.database.entity.DownloadEntity
 import app.vicsmusic.core.database.entity.LyricsCacheEntity
 import app.vicsmusic.core.database.entity.PlayHistoryEntity
+import app.vicsmusic.core.database.entity.SearchHistoryEntity
 import app.vicsmusic.core.database.model.asEntity
 import app.vicsmusic.core.database.model.asExternalModel
 import app.vicsmusic.core.domain.engine.ListeningEvent
@@ -45,6 +47,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val downloadDao: DownloadDao,
     private val lyricsDao: LyricsDao,
     private val playHistoryDao: PlayHistoryDao,
+    private val searchHistoryDao: SearchHistoryDao,
     private val sourceRegistry: SourceRegistry,
     private val lrclibClient: LrclibClient,
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient,
@@ -101,22 +104,28 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun searchTracks(query: String): Result<List<Track>> = withContext(ioDispatcher) {
         runCatching {
-            val localDbTracks = trackDao.searchTracks(query).firstOrNull() ?: emptyList()
-            if (localDbTracks.isNotEmpty()) {
-                localDbTracks.map { it.asExternalModel() }
-            } else {
-                val allResults = mutableListOf<Track>()
-                for (source in sourceRegistry.getAllSources()) {
-                    val page = source.search(query, SearchType.TRACKS, 1).getOrNull()
-                    if (page != null) {
-                        allResults.addAll(page.items)
-                    }
+            val clean = query.trim()
+            if (clean.isEmpty()) return@runCatching emptyList()
+
+            // 1. Guardar historial
+            runCatching { searchHistoryDao.insertSearch(SearchHistoryEntity(clean, System.currentTimeMillis())) }
+
+            // 2. Buscar en local
+            val local = trackDao.searchTracks(clean).firstOrNull()?.map { it.asExternalModel() }.orEmpty()
+
+            // 3. Buscar SIEMPRE en remoto (sin cortocircuito)
+            val remote = mutableListOf<Track>()
+            for (source in sourceRegistry.getAllSources()) {
+                source.search(clean, SearchType.TRACKS, 1).getOrNull()?.let {
+                    remote.addAll(it.items)
                 }
-                if (allResults.isNotEmpty()) {
-                    trackDao.upsertTracks(allResults.map { it.asEntity() })
-                }
-                allResults
             }
+
+            if (remote.isNotEmpty()) {
+                trackDao.upsertTracks(remote.map { it.asEntity() })
+            }
+
+            (local + remote).distinctBy { it.id }
         }
     }
 
@@ -219,17 +228,21 @@ class MusicRepositoryImpl @Inject constructor(
             ).getOrNull()
 
             if (fetched != null && fetched.lines.isNotEmpty()) {
-                val rawLrc = fetched.lines.joinToString("\n") { line ->
-                    val totalSec = line.timeMs / 1000
-                    val min = totalSec / 60
-                    val sec = totalSec % 60
-                    val ms = (line.timeMs % 1000) / 10
-                    String.format(Locale.US, "[%02d:%02d.%02d] %s", min, sec, ms, line.text)
+                val content = if (fetched.isSynced) {
+                    fetched.lines.joinToString("\n") { line ->
+                        val totalSec = line.timeMs / 1000
+                        val min = totalSec / 60
+                        val sec = totalSec % 60
+                        val ms = (line.timeMs % 1000) / 10
+                        String.format(Locale.US, "[%02d:%02d.%02d] %s", min, sec, ms, line.text)
+                    }
+                } else {
+                    fetched.lines.joinToString("\n") { it.text }
                 }
                 lyricsDao.insertLyrics(
                     LyricsCacheEntity(
                         trackId = track.id,
-                        content = rawLrc,
+                        content = content,
                         source = fetched.source
                     )
                 )

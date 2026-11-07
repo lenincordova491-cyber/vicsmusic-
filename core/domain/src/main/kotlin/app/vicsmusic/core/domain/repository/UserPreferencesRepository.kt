@@ -15,4 +15,5 @@ interface UserPreferencesRepository {
     suspend fun setActiveSourceIds(sourceIds: Set<String>)
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setFavoriteArtists(artists: Set<String>)
+    suspend fun setAutoplayEnabled(enabled: Boolean)
 }

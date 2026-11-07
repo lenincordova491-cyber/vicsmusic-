@@ -6,6 +6,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -22,6 +23,12 @@ class PlayerCacheManager @Inject constructor(
     private val databaseProvider = StandaloneDatabaseProvider(context)
     private val maxCacheSize: Long = 512 * 1024 * 1024L // 512 MB LRU
 
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent("com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12; en_US; Quest 2; Build/SQ3A.220605.009.A1) gzip")
+        .setAllowCrossProtocolRedirects(true)
+        .setConnectTimeoutMs(15_000)
+        .setReadTimeoutMs(15_000)
+
     val simpleCache: SimpleCache by lazy {
         if (!cacheDir.exists()) {
             cacheDir.mkdirs()
@@ -30,17 +37,17 @@ class PlayerCacheManager @Inject constructor(
         SimpleCache(cacheDir, evictor, databaseProvider)
     }
 
-    fun createCacheDataSourceFactory(): CacheDataSource.Factory {
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
+    fun updateRequestHeaders(headers: Map<String, String>) {
+        httpDataSourceFactory.setDefaultRequestProperties(headers)
+    }
 
+    fun createCacheDataSourceFactory(): CacheDataSource.Factory {
         val upstreamFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
         return CacheDataSource.Factory()
             .setCache(simpleCache)
             .setUpstreamDataSourceFactory(upstreamFactory)
+            .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(simpleCache))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 

@@ -1,0 +1,79 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "radio-browser",
+  "name": "Radio Browser (radios del mundo)",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "type": [
+    "radio"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Directorio comunitario de emisoras",
+    "notice": "Solo enlaza a emisoras públicas de internet. Cada emisora tiene su propia política.",
+    "docs": "https://api.radio-browser.info/"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://de1.api.radio-browser.info/json",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "discoverServers": "https://all.api.radio-browser.info/json/servers"
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 30
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/stations/search",
+      "query": {
+        "name": "{{query}}",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}",
+        "hidebroken": "true",
+        "order": "clickcount",
+        "reverse": "true"
+      },
+      "response": {
+        "itemsPath": "$",
+        "map": {
+          "id": "$.stationuuid",
+          "title": "$.name",
+          "artist": "$.country",
+          "artworkUrl": "$.favicon",
+          "streamUrl": "$.url_resolved",
+          "isLive": true
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/stations/topclick/{{limit}}",
+      "sectionTitle": "Radios más escuchadas",
+      "response": {
+        "itemsPath": "$",
+        "map": {
+          "id": "$.stationuuid",
+          "title": "$.name",
+          "artist": "$.country",
+          "artworkUrl": "$.favicon",
+          "streamUrl": "$.url_resolved",
+          "isLive": true
+        }
+      }
+    }
+  }
+}

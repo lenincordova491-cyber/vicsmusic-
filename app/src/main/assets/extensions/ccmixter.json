@@ -1,0 +1,55 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "ccmixter",
+  "name": "ccMixter",
+  "version": "1.0.0",
+  "lang": [
+    "en"
+  ],
+  "status": "sin-verificar",
+  "legal": {
+    "license": "Creative Commons (remixes y samples)",
+    "notice": "Comunidad de remixes con licencias CC. Revisa la licencia de cada pista.",
+    "docs": "http://ccmixter.org/query-api"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://ccmixter.org",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 20
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/api/query",
+      "query": {
+        "f": "json",
+        "search": "{{query}}",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}",
+        "sort": "rank"
+      },
+      "response": {
+        "itemsPath": "$",
+        "map": {
+          "id": "$.upload_id",
+          "title": "$.upload_name",
+          "artist": "$.user_real_name",
+          "streamUrl": "$.files[0].download_url"
+        }
+      }
+    }
+  }
+}

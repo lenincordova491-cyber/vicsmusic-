@@ -28,7 +28,7 @@ object LrcParser {
             val lines = plainLyrics.lineSequence()
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
-                .mapIndexed { index, line -> LyricLine(timeMs = index * 4000L, text = line) }
+                .map { line -> LyricLine(timeMs = 0L, text = line) }
                 .toList()
             return Lyrics(
                 trackId = trackId,

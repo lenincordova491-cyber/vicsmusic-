@@ -3,9 +3,11 @@ package app.vicsmusic
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.vicsmusic.core.domain.repository.MusicRepository
+import app.vicsmusic.core.domain.repository.UserPreferencesRepository
 import app.vicsmusic.core.model.PlaybackState
 import app.vicsmusic.core.model.RepeatMode
 import app.vicsmusic.core.model.Track
+import app.vicsmusic.core.model.UserPreferences
 import app.vicsmusic.core.player.PlaybackConnection
 import app.vicsmusic.core.player.queue.QueueState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,8 +29,16 @@ sealed interface LocalMediaUiState {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
-    private val playbackConnection: PlaybackConnection
+    private val playbackConnection: PlaybackConnection,
+    private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
+
+    val userPreferences: StateFlow<UserPreferences> = userPreferencesRepository.userPreferences
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = UserPreferences()
+        )
 
     val allTracks: StateFlow<List<Track>> = musicRepository.getAllTracks()
         .stateIn(

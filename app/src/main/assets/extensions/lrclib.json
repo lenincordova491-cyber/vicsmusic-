@@ -1,0 +1,69 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "lrclib",
+  "name": "LRCLIB (letras sincronizadas)",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "type": [
+    "lyrics"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Base de datos abierta y comunitaria de letras",
+    "notice": "Solo letras, no audio.",
+    "docs": "https://lrclib.net/docs"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://lrclib.net/api",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152
+  },
+  "capabilities": [
+    "LYRICS"
+  ],
+  "endpoints": {
+    "lyrics": {
+      "method": "GET",
+      "path": "/get",
+      "query": {
+        "track_name": "{{title}}",
+        "artist_name": "{{artist}}",
+        "album_name": "{{album}}",
+        "duration": "{{durationSec}}"
+      },
+      "response": {
+        "object": true,
+        "map": {
+          "synced": "$.syncedLyrics",
+          "plain": "$.plainLyrics",
+          "instrumental": "$.instrumental"
+        },
+        "syncedFormat": "lrc"
+      }
+    },
+    "lyricsSearch": {
+      "method": "GET",
+      "path": "/search",
+      "query": {
+        "q": "{{title}} {{artist}}"
+      },
+      "response": {
+        "itemsPath": "$",
+        "map": {
+          "synced": "$.syncedLyrics",
+          "plain": "$.plainLyrics",
+          "title": "$.trackName",
+          "artist": "$.artistName"
+        },
+        "syncedFormat": "lrc"
+      }
+    }
+  }
+}

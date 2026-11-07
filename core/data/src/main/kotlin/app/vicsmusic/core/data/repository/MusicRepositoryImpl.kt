@@ -23,6 +23,7 @@ import app.vicsmusic.core.network.VicsHttpClientFactory
 import app.vicsmusic.source.api.SearchType
 import app.vicsmusic.source.api.SourceRegistry
 import app.vicsmusic.source.local.LocalMusicSource
+import app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsBytes
@@ -47,6 +48,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val sourceRegistry: SourceRegistry,
     private val lrclibClient: LrclibClient,
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient,
+    private val declarativeExtensionManager: DeclarativeExtensionManager,
     @ApplicationContext private val context: Context,
     @app.vicsmusic.core.data.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MusicRepository {
@@ -261,36 +263,45 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun syncLocalTracks(): Result<Int> = withContext(ioDispatcher) {
         runCatching {
             val localSource = sourceRegistry.getSource(LocalMusicSource.SOURCE_ID) as? LocalMusicSource
-                ?: throw IllegalStateException("LocalMusicSource is not registered")
-            val localTracks = localSource.getAllTracks().getOrThrow()
-            if (localTracks.isNotEmpty()) {
-                trackDao.upsertTracks(localTracks.map { it.asEntity() })
+                ?: return@runCatching 0
+            val tracks = localSource.scanAllLocalTracks()
+            if (tracks.isNotEmpty()) {
+                trackDao.upsertTracks(tracks.map { it.asEntity() })
             }
-            localTracks.size
+            tracks.size
         }
     }
 
     override suspend fun getAvailableExtensions(): Result<List<app.vicsmusic.core.model.ExtensionItem>> =
         withContext(ioDispatcher) {
             runCatching {
-                extensionRegistryClient.fetchRegistry().getOrElse {
-                    extensionRegistryClient.parseRegistryJson(app.vicsmusic.core.network.ExtensionRegistryClient.FALLBACK_REGISTRY_JSON)
-                }.extensions
+                val declarative = declarativeExtensionManager.getAvailableExtensions()
+                if (declarative.isNotEmpty()) {
+                    declarative
+                } else {
+                    extensionRegistryClient.fetchRegistry().getOrElse {
+                        extensionRegistryClient.parseRegistryJson(app.vicsmusic.core.network.ExtensionRegistryClient.FALLBACK_REGISTRY_JSON)
+                    }.extensions
+                }
             }
         }
 
     override suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
+            trackDao.deleteTracksBySource("local")
             trackDao.upsertTracks(tracks.map { it.asEntity() })
         }
     }
 
     private fun resolveSourceId(trackId: String): String {
-        return when {
-            trackId.startsWith("local_") -> LocalMusicSource.SOURCE_ID
-            trackId.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX) -> app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID
-            trackId.startsWith("jamendo_") -> "jamendo"
-            else -> "local"
+        if (trackId.startsWith("local_")) return LocalMusicSource.SOURCE_ID
+        if (trackId.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)) {
+            return app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID
         }
+        val prefix = trackId.substringBefore('_')
+        if (sourceRegistry.getSource(prefix) != null) {
+            return prefix
+        }
+        return "local"
     }
 }

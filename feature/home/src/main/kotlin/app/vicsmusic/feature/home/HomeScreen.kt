@@ -79,6 +79,7 @@ fun HomeRoute(
         onDismissSettings = { viewModel.setSettingsOpen(false) },
         onToggleExtension = viewModel::toggleExtension,
         onDownloadTrack = viewModel::downloadTrack,
+        onResetArtistPreferences = viewModel::resetArtistPreferences,
         modifier = modifier
     )
 }
@@ -92,6 +93,7 @@ fun HomeScreen(
     onDismissSettings: () -> Unit,
     onToggleExtension: (String) -> Unit,
     onDownloadTrack: (Track) -> Unit,
+    onResetArtistPreferences: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -284,7 +286,18 @@ fun HomeScreen(
                 }
             }
 
-            // 7. Descargas (100% Offline Songs stored on device)
+            // 7. Podcasts Empty State
+            if (uiState.selectedFilter == HomeCategoryFilter.PODCASTS) {
+                item {
+                    EmptyContent(
+                        title = "Podcasts próximamente",
+                        message = "Explora tus canciones y artistas favoritos en las pestañas Todos, Música o Descargas.",
+                        modifier = Modifier.fillMaxWidth().height(240.dp)
+                    )
+                }
+            }
+
+            // 8. Descargas (100% Offline Songs stored on device)
             if (uiState.selectedFilter == HomeCategoryFilter.DOWNLOADS || (uiState.selectedFilter == HomeCategoryFilter.ALL && uiState.downloadedTracks.isNotEmpty())) {
                 item {
                     SectionHeader(title = "Descargas locales (100% Offline)")
@@ -373,6 +386,7 @@ fun HomeScreen(
                 extensions = uiState.availableExtensions,
                 activeIds = uiState.activeExtensionIds,
                 onToggle = onToggleExtension,
+                onResetArtistPreferences = onResetArtistPreferences,
                 onDismiss = onDismissSettings
             )
         }
@@ -583,6 +597,7 @@ private fun SettingsExtensionsDialog(
     extensions: List<ExtensionItem>,
     activeIds: Set<String>,
     onToggle: (String) -> Unit,
+    onResetArtistPreferences: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -596,7 +611,7 @@ private fun SettingsExtensionsDialog(
                     modifier = Modifier.size(24.dp).padding(end = 8.dp)
                 )
                 Text(
-                    text = "Ajustes de Extensiones",
+                    text = "Ajustes y Preferencias",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleLarge
                 )
@@ -604,10 +619,46 @@ private fun SettingsExtensionsDialog(
         },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().height(360.dp),
+                modifier = Modifier.fillMaxWidth().height(380.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SpotifyGreen.copy(alpha = 0.15f))
+                            .clickable {
+                                onDismiss()
+                                onResetArtistPreferences()
+                            }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = SpotifyGreen
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Personalizar artistas favoritos",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Elige tus artistas para adaptar tus recomendaciones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Activa o desactiva fuentes para personalizar el catálogo y streaming en Inicio:",
                         style = MaterialTheme.typography.bodySmall,

@@ -1,0 +1,97 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "subsonic",
+  "name": "Subsonic / Navidrome / Jellyfin (self-hosted)",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Tu propio servidor y tu propia biblioteca",
+    "notice": "Reproduce música que tú alojas. Compatible con servidores que implementen la API Subsonic (Navidrome, Airsonic, Gonic, etc.).",
+    "docs": "https://www.subsonic.org/pages/api.jsp"
+  },
+  "auth": {
+    "type": "subsonic",
+    "userProvided": true,
+    "fields": [
+      "serverUrl",
+      "username",
+      "password"
+    ],
+    "note": "El motor calcula t = md5(password + salt) y agrega u, t, s, v, c y f=json a cada llamada."
+  },
+  "http": {
+    "baseUrl": "{{serverUrl}}",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "allowHttp": true,
+    "allowPrivateNetwork": true
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE",
+    "PLAYLISTS"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 30
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/rest/search3.view",
+      "query": {
+        "query": "{{query}}",
+        "songCount": "{{limit}}",
+        "songOffset": "{{offset}}",
+        "artistCount": "0",
+        "albumCount": "0"
+      },
+      "response": {
+        "itemsPath": "$['subsonic-response'].searchResult3.song",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.artist",
+          "album": "$.album",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": {
+            "template": "{{serverUrl}}/rest/getCoverArt.view?id={{$.coverArt}}&size=500{{authQuery}}"
+          },
+          "streamUrl": {
+            "template": "{{serverUrl}}/rest/stream.view?id={{$.id}}{{authQuery}}"
+          }
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/rest/getAlbumList2.view",
+      "query": {
+        "type": "recent",
+        "size": "{{limit}}"
+      },
+      "sectionTitle": "Álbumes recientes",
+      "response": {
+        "itemsPath": "$['subsonic-response'].albumList2.album",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.artist",
+          "artworkUrl": {
+            "template": "{{serverUrl}}/rest/getCoverArt.view?id={{$.coverArt}}&size=500{{authQuery}}"
+          },
+          "kind": "album"
+        }
+      }
+    }
+  }
+}

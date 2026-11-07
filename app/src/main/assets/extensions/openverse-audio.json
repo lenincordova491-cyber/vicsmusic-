@@ -1,0 +1,61 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "openverse-audio",
+  "name": "Openverse (Audio)",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Creative Commons / dominio público (varía por pista)",
+    "notice": "Buscador de contenido abierto. Muestra y respeta la licencia de cada resultado.",
+    "docs": "https://api.openverse.org/v1/"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://api.openverse.org/v1",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "rateLimit": {
+      "requests": 1,
+      "perSeconds": 1
+    }
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM"
+  ],
+  "paging": {
+    "type": "page",
+    "pageSize": 20,
+    "firstPage": 1
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/audio/",
+      "query": {
+        "q": "{{query}}",
+        "page_size": "{{limit}}",
+        "page": "{{page}}"
+      },
+      "response": {
+        "itemsPath": "$.results",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.creator",
+          "durationMs": "$.duration",
+          "artworkUrl": "$.thumbnail",
+          "streamUrl": "$.url",
+          "license": "$.license"
+        }
+      }
+    }
+  }
+}

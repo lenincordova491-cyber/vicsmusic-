@@ -142,6 +142,12 @@ class LocalMusicSource(
         }
     }
 
+    fun scanAllLocalTracks(): List<Track> = queryTracks(
+        selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+        selectionArgs = null,
+        limit = null
+    )
+
     private fun queryTracks(
         selection: String? = null,
         selectionArgs: Array<String>? = null,
@@ -159,7 +165,7 @@ class LocalMusicSource(
             MediaStore.Audio.Media.DATE_ADDED
         )
 
-        val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC" + (if (limit != null) " LIMIT $limit" else "")
+        val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
         val tracks = mutableListOf<Track>()
         val cursor: Cursor? = contentResolver.query(
@@ -182,6 +188,8 @@ class LocalMusicSource(
             val dateAddedColumn = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
 
             while (c.moveToNext()) {
+                if (limit != null && tracks.size >= limit) break
+
                 if (isMusicColumn != -1) {
                     val isMusic = c.getInt(isMusicColumn)
                     if (isMusic == 0) continue

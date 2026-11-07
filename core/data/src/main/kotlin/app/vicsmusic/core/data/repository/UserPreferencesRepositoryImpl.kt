@@ -39,4 +39,12 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setActiveSourceIds(sourceIds: Set<String>) {
         dataStore.setActiveSourceIds(sourceIds)
     }
+
+    override suspend fun setOnboardingCompleted(completed: Boolean) {
+        dataStore.setOnboardingCompleted(completed)
+    }
+
+    override suspend fun setFavoriteArtists(artists: Set<String>) {
+        dataStore.setFavoriteArtists(artists)
+    }
 }

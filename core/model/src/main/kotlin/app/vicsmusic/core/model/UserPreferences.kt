@@ -17,5 +17,29 @@ data class UserPreferences(
     val crossfadeDurationSeconds: Int = 0,
     val lastPlayedTrackId: String? = null,
     val lastPlayedPositionMs: Long = 0L,
-    val activeSourceIds: Set<String> = setOf("local", "jamendo")
+    val activeSourceIds: Set<String> = setOf(
+        "local",
+        "ytmusic",
+        "ytmusic-spotiflac",
+        "spotify-web",
+        "soundcloud",
+        "apple-music",
+        "deezer",
+        "jiosaavn",
+        "tidal-web",
+        "jamendo",
+        "audius",
+        "somafm",
+        "itunes-preview",
+        "deezer-preview",
+        "internet-archive",
+        "openverse-audio",
+        "radio-browser",
+        "ccmixter",
+        "subsonic",
+        "lrclib",
+        "musicbrainz"
+    ),
+    val isOnboardingCompleted: Boolean = false,
+    val favoriteArtistIds: Set<String> = emptySet()
 )

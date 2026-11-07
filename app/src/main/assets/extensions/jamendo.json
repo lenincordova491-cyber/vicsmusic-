@@ -1,0 +1,96 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "jamendo",
+  "name": "Jamendo",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Creative Commons (varía por pista)",
+    "notice": "Música independiente con licencias CC. Respeta la licencia de cada pista y acredita al artista.",
+    "docs": "https://developer.jamendo.com/v3.0"
+  },
+  "auth": {
+    "type": "apiKey",
+    "userProvided": true,
+    "in": "query",
+    "name": "client_id",
+    "label": "Client ID de Jamendo"
+  },
+  "http": {
+    "baseUrl": "https://api.jamendo.com/v3.0",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "rateLimit": {
+      "requests": 5,
+      "perSeconds": 1
+    }
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 30
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/tracks/",
+      "query": {
+        "format": "json",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}",
+        "search": "{{query}}",
+        "imagesize": "500"
+      },
+      "response": {
+        "itemsPath": "$.results",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.artist_name",
+          "album": "$.album_name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.image",
+          "streamUrl": "$.audio"
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/tracks/",
+      "query": {
+        "format": "json",
+        "limit": "{{limit}}",
+        "order": "popularity_week",
+        "imagesize": "500"
+      },
+      "sectionTitle": "Populares esta semana",
+      "response": {
+        "itemsPath": "$.results",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.artist_name",
+          "album": "$.album_name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.image",
+          "streamUrl": "$.audio"
+        }
+      }
+    }
+  }
+}

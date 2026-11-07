@@ -1,0 +1,62 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "musicbrainz",
+  "name": "MusicBrainz (metadatos)",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "type": [
+    "metadata"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Metadatos abiertos (dominio público / CC0 en gran parte)",
+    "notice": "Solo metadatos, no audio. Exige un User-Agent identificable y un máximo de 1 petición por segundo.",
+    "docs": "https://musicbrainz.org/doc/MusicBrainz_API"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://musicbrainz.org/ws/2",
+    "userAgent": "Vicsmusic/{{appVersion}} ( {{contactEmail}} )",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "rateLimit": {
+      "requests": 1,
+      "perSeconds": 1
+    }
+  },
+  "capabilities": [
+    "SEARCH"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/recording",
+      "query": {
+        "query": "{{query}}",
+        "fmt": "json",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}"
+      },
+      "response": {
+        "itemsPath": "$.recordings",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$['artist-credit'][0].name",
+          "album": "$.releases[0].title",
+          "durationMs": "$.length"
+        },
+        "metadataOnly": true
+      }
+    }
+  }
+}

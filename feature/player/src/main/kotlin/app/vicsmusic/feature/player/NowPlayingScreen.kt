@@ -342,13 +342,17 @@ fun NowPlayingScreen(
                 }
             }
 
-            // Spotify Synced Lyrics Card
+            // Spotify Synced / Plain Lyrics Card
             if (lyrics != null && lyrics.lines.isNotEmpty()) {
-                val activeIndex = lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }.coerceAtLeast(0)
+                val activeIndex = if (lyrics.isSynced) {
+                    lyrics.lines.indexOfLast { it.timeMs <= playbackState.positionMs }
+                } else {
+                    -1
+                }
                 val listState = rememberLazyListState()
 
                 LaunchedEffect(activeIndex) {
-                    if (activeIndex >= 0) {
+                    if (lyrics.isSynced && activeIndex >= 0) {
                         listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
                     }
                 }
@@ -393,15 +397,19 @@ fun NowPlayingScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             itemsIndexed(lyrics.lines) { index, line ->
-                                val isCurrent = index == activeIndex
+                                val isCurrent = lyrics.isSynced && index == activeIndex
                                 Text(
                                     text = line.text,
                                     style = if (isCurrent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.45f),
+                                    color = when {
+                                        !lyrics.isSynced -> Color.White.copy(alpha = 0.85f)
+                                        isCurrent -> Color.White
+                                        else -> Color.White.copy(alpha = 0.45f)
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onSeekTo(line.timeMs) }
+                                        .clickable(enabled = lyrics.isSynced) { onSeekTo(line.timeMs) }
                                 )
                             }
                         }

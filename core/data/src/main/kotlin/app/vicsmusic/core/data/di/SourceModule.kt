@@ -50,14 +50,34 @@ object SourceModule {
 
     @Provides
     @Singleton
+    fun provideLocalMusicSource(
+        @ApplicationContext context: Context
+    ): LocalMusicSource {
+        return LocalMusicSource(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideSourceRegistry(
         @ApplicationContext context: Context,
-        youTubeMusicSource: YouTubeMusicSource
+        httpClient: HttpClient,
+        youTubeMusicSource: YouTubeMusicSource,
+        localMusicSource: LocalMusicSource
     ): SourceRegistry {
         val registry = SourceRegistry()
-        val localSource = LocalMusicSource(context)
-        registry.register(localSource)
         registry.register(youTubeMusicSource)
+        registry.register(localMusicSource)
+        app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager(context, httpClient, registry)
         return registry
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeclarativeExtensionManager(
+        @ApplicationContext context: Context,
+        httpClient: HttpClient,
+        sourceRegistry: SourceRegistry
+    ): app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager {
+        return app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager(context, httpClient, sourceRegistry)
     }
 }

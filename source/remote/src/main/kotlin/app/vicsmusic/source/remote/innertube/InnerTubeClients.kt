@@ -117,15 +117,15 @@ object InnerTubeClients {
     )
 
     /**
-     * Ordered fallback chain used to resolve playable audio streams per Phase 4.2 brief.
-     * Priority order: VISIONOS -> ANDROID_VR -> IOS -> ANDROID -> TVHTML5
+     * Ordered fallback chain used to resolve playable audio streams.
+     * Priority order: ANDROID_VR -> IOS -> ANDROID -> TVHTML5 -> VISIONOS
      */
     val STREAM_CLIENTS: List<InnerTubeClientProfile> = listOf(
-        VISIONOS,
         ANDROID_VR,
         IOS,
         ANDROID,
-        TVHTML5
+        TVHTML5,
+        VISIONOS
     )
 
     /** `params` value of the YouTube Music search "Songs" filter chip. */

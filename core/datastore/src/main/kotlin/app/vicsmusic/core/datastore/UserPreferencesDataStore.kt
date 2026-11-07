@@ -30,7 +30,33 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
         val LAST_PLAYED_TRACK_ID = stringPreferencesKey("last_played_track_id")
         val LAST_PLAYED_POSITION_MS = longPreferencesKey("last_played_position_ms")
         val ACTIVE_SOURCE_IDS = stringSetPreferencesKey("active_source_ids")
+        val IS_ONBOARDING_COMPLETED = androidx.datastore.preferences.core.booleanPreferencesKey("is_onboarding_completed")
+        val FAVORITE_ARTISTS = stringSetPreferencesKey("favorite_artists")
     }
+
+    private val defaultSources = setOf(
+        "local",
+        "ytmusic",
+        "ytmusic-spotiflac",
+        "spotify-web",
+        "soundcloud",
+        "apple-music",
+        "deezer",
+        "jiosaavn",
+        "tidal-web",
+        "jamendo",
+        "audius",
+        "somafm",
+        "itunes-preview",
+        "deezer-preview",
+        "internet-archive",
+        "openverse-audio",
+        "radio-browser",
+        "ccmixter",
+        "subsonic",
+        "lrclib",
+        "musicbrainz"
+    )
 
     val userPreferences: Flow<UserPreferences> = dataStore.data
         .catch { exception ->
@@ -53,7 +79,9 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
             val crossfade = preferences[PreferencesKeys.CROSSFADE_SECONDS] ?: 0
             val lastTrackId = preferences[PreferencesKeys.LAST_PLAYED_TRACK_ID]
             val lastPosition = preferences[PreferencesKeys.LAST_PLAYED_POSITION_MS] ?: 0L
-            val activeSources = preferences[PreferencesKeys.ACTIVE_SOURCE_IDS] ?: setOf("local", "jamendo")
+            val activeSources = preferences[PreferencesKeys.ACTIVE_SOURCE_IDS] ?: defaultSources
+            val isOnboardingCompleted = preferences[PreferencesKeys.IS_ONBOARDING_COMPLETED] ?: false
+            val favoriteArtists = preferences[PreferencesKeys.FAVORITE_ARTISTS] ?: emptySet()
 
             UserPreferences(
                 themeMode = themeMode,
@@ -62,7 +90,9 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
                 crossfadeDurationSeconds = crossfade.coerceIn(0, 12),
                 lastPlayedTrackId = lastTrackId,
                 lastPlayedPositionMs = lastPosition,
-                activeSourceIds = activeSources
+                activeSourceIds = activeSources,
+                isOnboardingCompleted = isOnboardingCompleted,
+                favoriteArtistIds = favoriteArtists
             )
         }
 
@@ -100,6 +130,18 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
     suspend fun setActiveSourceIds(sourceIds: Set<String>) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.ACTIVE_SOURCE_IDS] = sourceIds
+        }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_ONBOARDING_COMPLETED] = completed
+        }
+    }
+
+    suspend fun setFavoriteArtists(artists: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FAVORITE_ARTISTS] = artists
         }
     }
 }

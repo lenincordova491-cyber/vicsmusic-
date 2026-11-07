@@ -1,0 +1,90 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "audius",
+  "name": "Audius",
+  "version": "1.0.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "requiere-api-key",
+  "legal": {
+    "license": "Catálogo abierto de artistas independientes",
+    "notice": "Acredita siempre al artista. Según la documentación actual, la API pide una API key gratuita.",
+    "docs": "https://docs.audius.org/api"
+  },
+  "auth": {
+    "type": "bearer",
+    "userProvided": true,
+    "label": "Bearer token de Audius (se crea en api.audius.co/plans)"
+  },
+  "http": {
+    "baseUrl": "https://api.audius.co/v1",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152,
+    "allowRedirectsToAnyHttps": true
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 30
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/tracks/search",
+      "query": {
+        "query": "{{query}}",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}",
+        "app_name": "Vicsmusic"
+      },
+      "response": {
+        "itemsPath": "$.data",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.user.name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.artwork['480x480']",
+          "streamUrl": {
+            "template": "https://api.audius.co/v1/tracks/{{$.id}}/stream?app_name=Vicsmusic"
+          }
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/tracks/trending",
+      "query": {
+        "limit": "{{limit}}",
+        "app_name": "Vicsmusic"
+      },
+      "sectionTitle": "Tendencias en Audius",
+      "response": {
+        "itemsPath": "$.data",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.user.name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.artwork['480x480']",
+          "streamUrl": {
+            "template": "https://api.audius.co/v1/tracks/{{$.id}}/stream?app_name=Vicsmusic"
+          }
+        }
+      }
+    }
+  }
+}

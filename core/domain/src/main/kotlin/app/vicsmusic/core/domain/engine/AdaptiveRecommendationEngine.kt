@@ -38,6 +38,7 @@ class AdaptiveRecommendationEngine {
         allAvailableTracks: List<Track>,
         listeningHistory: List<ListeningEvent>,
         favoriteTrackIds: Set<String> = emptySet(),
+        favoriteArtistNames: Set<String> = emptySet(),
         maxPerSection: Int = 10
     ): RecommendationResult {
         if (allAvailableTracks.isEmpty()) {
@@ -51,6 +52,12 @@ class AdaptiveRecommendationEngine {
 
         // 1. Calculate artist affinity scores
         val artistScores = mutableMapOf<String, Float>()
+        
+        // Initial affinity boost from user-chosen artists (+15.0f)
+        for (artist in favoriteArtistNames) {
+            artistScores[artist] = 15.0f
+        }
+
         for (event in listeningHistory) {
             val scoreDelta = when {
                 event.completionPercentage >= COMPLETION_THRESHOLD_POSITIVE -> POINTS_FULL_LISTEN
@@ -69,10 +76,28 @@ class AdaptiveRecommendationEngine {
             var score = 0f
 
             // Artist affinity
-            val artistScore = artistScores[track.artistName] ?: 0f
+            val artistScore = artistScores[track.artistName]
+                ?: artistScores[track.artistId]
+                ?: artistScores.entries.find {
+                    it.key.equals(track.artistName, ignoreCase = true) ||
+                    it.key.replace("_", " ").equals(track.artistName, ignoreCase = true) ||
+                    track.artistName.replace(" ", "_").equals(it.key, ignoreCase = true)
+                }?.value
+                ?: 0f
             score += artistScore * 2.0f
 
-            // Favorite bonus
+            // Direct favorite artist match
+            val isFavoriteArtist = favoriteArtistNames.any { fav ->
+                track.artistId.equals(fav, ignoreCase = true) ||
+                track.artistName.equals(fav, ignoreCase = true) ||
+                track.artistName.replace(" ", "_").equals(fav, ignoreCase = true) ||
+                fav.replace("_", " ").equals(track.artistName, ignoreCase = true)
+            }
+            if (isFavoriteArtist) {
+                score += 10.0f
+            }
+
+            // Favorite track bonus
             if (track.isLiked || favoriteTrackIds.contains(track.id)) {
                 score += POINTS_LIKED
             }

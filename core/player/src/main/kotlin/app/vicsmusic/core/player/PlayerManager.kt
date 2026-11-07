@@ -78,11 +78,14 @@ class PlayerManager @Inject constructor(
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
+    private var consecutiveErrorCount = 0
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
             updatePlaybackState()
             when (state) {
                 Player.STATE_READY -> {
+                    consecutiveErrorCount = 0
                     startProgressTracker()
                 }
                 Player.STATE_ENDED -> {
@@ -107,14 +110,17 @@ class PlayerManager @Inject constructor(
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            consecutiveErrorCount++
             _playbackState.value = _playbackState.value.copy(
                 status = PlaybackStatus.ERROR,
                 errorMessage = error.localizedMessage
             )
-            // Retry with next song on persistent error
-            scope.launch {
-                delay(1500)
-                playNext()
+            val hasNext = queueManager.state.value.currentIndex < queueManager.state.value.items.size - 1
+            if (consecutiveErrorCount <= 2 && hasNext) {
+                scope.launch {
+                    delay(1500)
+                    playNext()
+                }
             }
         }
     }
@@ -163,6 +169,10 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val streamResult = musicRepository.getStreamInfo(track.id, AudioQuality.HIGH)
             streamResult.onSuccess { streamInfo ->
+                if (streamInfo.headers.isNotEmpty()) {
+                    playerCacheManager.updateRequestHeaders(streamInfo.headers)
+                }
+
                 val metadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artistName)
@@ -174,6 +184,7 @@ class PlayerManager @Inject constructor(
                 val mediaItem = MediaItem.Builder()
                     .setMediaId(track.id)
                     .setUri(Uri.parse(streamInfo.url))
+                    .setCustomCacheKey(track.id)
                     .setMediaMetadata(metadata)
                     .build()
 

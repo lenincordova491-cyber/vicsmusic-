@@ -10,6 +10,7 @@ import app.vicsmusic.core.model.Track
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -76,11 +77,13 @@ class PlaylistRepositoryImpl @Inject constructor(
     override suspend fun addTrackToPlaylist(playlistId: String, trackId: String): Result<Unit> =
         withContext(ioDispatcher) {
             runCatching {
+                val currentTracks = playlistDao.getTracksForPlaylist(playlistId).firstOrNull() ?: emptyList()
+                val nextPosition = currentTracks.size
                 playlistDao.insertPlaylistTrack(
                     PlaylistTrackEntity(
                         playlistId = playlistId,
                         trackId = trackId,
-                        position = System.currentTimeMillis().toInt(),
+                        position = nextPosition,
                         addedAt = System.currentTimeMillis()
                     )
                 )

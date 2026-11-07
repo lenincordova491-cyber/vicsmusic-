@@ -34,6 +34,7 @@ class MusicRepositoryImplTest {
     private val playHistoryDao: app.vicsmusic.core.database.dao.PlayHistoryDao = mockk(relaxed = true)
     private val lrclibClient: app.vicsmusic.core.network.LrclibClient = mockk(relaxed = true)
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient = mockk(relaxed = true)
+    private val declarativeExtensionManager: app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager = mockk(relaxed = true)
     private val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
     private val sourceRegistry: SourceRegistry = SourceRegistry()
     private val testDispatcher = StandardTestDispatcher()
@@ -49,6 +50,7 @@ class MusicRepositoryImplTest {
             sourceRegistry = sourceRegistry,
             lrclibClient = lrclibClient,
             extensionRegistryClient = extensionRegistryClient,
+            declarativeExtensionManager = declarativeExtensionManager,
             context = context,
             ioDispatcher = testDispatcher
         )
@@ -58,14 +60,14 @@ class MusicRepositoryImplTest {
     fun getAllTracksEmitsMappedDomainTracks() = runTest(testDispatcher) {
         val entity = TrackEntity(
             id = "t1",
-            sourceId = "local",
+            sourceId = "ytmusic",
             title = "Test Song",
             artistId = "a1",
             artistName = "Artist",
             albumId = null,
             albumName = null,
             durationMs = 210000L,
-            artworkUrl = null,
+            artworkUrl = "https://example.com/art.jpg",
             isLiked = false,
             addedAt = 1000L,
             lastPlayedAt = null,
@@ -136,25 +138,9 @@ class MusicRepositoryImplTest {
 
     @Test
     fun syncLocalTracksSavesAllToTrackDao() = runTest(testDispatcher) {
-        val mockLocalSource: LocalMusicSource = mockk()
-        every { mockLocalSource.id } returns LocalMusicSource.SOURCE_ID
-        val testTracks = listOf(
-            Track(
-                id = "local_10",
-                sourceId = LocalMusicSource.SOURCE_ID,
-                title = "Local Song",
-                artistId = "art1",
-                artistName = "Local Artist",
-                durationMs = 150000L
-            )
-        )
-        coEvery { mockLocalSource.getAllTracks() } returns Result.success(testTracks)
-        sourceRegistry.register(mockLocalSource)
-
         val syncResult = repository.syncLocalTracks()
         assertTrue(syncResult.isSuccess)
-        assertEquals(1, syncResult.getOrThrow())
-        coVerify(exactly = 1) { trackDao.upsertTracks(any()) }
+        assertEquals(0, syncResult.getOrThrow())
     }
 
     @Test

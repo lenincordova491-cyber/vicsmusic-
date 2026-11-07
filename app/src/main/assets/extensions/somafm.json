@@ -1,0 +1,52 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "somafm",
+  "name": "SomaFM",
+  "version": "1.0.0",
+  "lang": [
+    "en"
+  ],
+  "type": [
+    "radio"
+  ],
+  "status": "verificar-endpoints",
+  "legal": {
+    "license": "Radio independiente sin anuncios, apoyada por oyentes",
+    "notice": "Considera donar a SomaFM si la usas seguido.",
+    "docs": "https://somafm.com/"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://somafm.com",
+    "userAgent": "Vicsmusic/{{appVersion}}",
+    "timeoutMs": 10000,
+    "maxBytes": 2097152
+  },
+  "capabilities": [
+    "BROWSE",
+    "STREAM"
+  ],
+  "endpoints": {
+    "home": {
+      "method": "GET",
+      "path": "/channels.json",
+      "sectionTitle": "Canales de SomaFM",
+      "response": {
+        "itemsPath": "$.channels",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.genre",
+          "artworkUrl": "$.largeimage",
+          "streamUrl": {
+            "template": "https://ice1.somafm.com/{{$.id}}-128-mp3"
+          },
+          "isLive": true
+        }
+      }
+    }
+  }
+}

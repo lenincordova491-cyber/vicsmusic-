@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class SearchFilter {
-    ALL,
-    TRACKS,
-    ARTISTS,
-    ALBUMS
+enum class SearchFilter(val displayName: String) {
+    ALL("Todos"),
+    TRACKS("Música"),
+    PODCASTS("Podcasts"),
+    AUDIOBOOKS("Audiolibros"),
+    ARTISTS("Artistas"),
+    ALBUMS("Álbumes")
 }
 
 data class SearchUiState(
@@ -138,8 +140,15 @@ class SearchViewModel @Inject constructor(
     private fun filterTracks(tracks: List<Track>, filter: SearchFilter): List<Track> {
         val query = _uiState.value.query.trim().lowercase()
         return when (filter) {
-            SearchFilter.ALL -> tracks
-            SearchFilter.TRACKS -> tracks
+            SearchFilter.ALL, SearchFilter.TRACKS -> tracks
+            SearchFilter.PODCASTS -> {
+                val matched = tracks.filter { it.artistName.contains("podcast", ignoreCase = true) || it.title.contains("podcast", ignoreCase = true) }
+                matched.ifEmpty { tracks }
+            }
+            SearchFilter.AUDIOBOOKS -> {
+                val matched = tracks.filter { it.artistName.contains("audio", ignoreCase = true) || it.title.contains("libro", ignoreCase = true) }
+                matched.ifEmpty { tracks }
+            }
             SearchFilter.ARTISTS -> {
                 val matched = tracks.filter { it.artistName.lowercase().contains(query) }
                 matched.ifEmpty { tracks }

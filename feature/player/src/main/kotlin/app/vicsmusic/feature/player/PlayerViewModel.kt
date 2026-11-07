@@ -6,6 +6,7 @@ import app.vicsmusic.core.domain.repository.MusicRepository
 import app.vicsmusic.core.domain.usecase.ToggleLikeUseCase
 import app.vicsmusic.core.model.Lyrics
 import app.vicsmusic.core.model.PlaybackState
+import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.player.PlaybackConnection
 import app.vicsmusic.core.player.queue.QueueState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -65,6 +67,66 @@ class PlayerViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
         )
+
+    val artistTracks: StateFlow<List<Track>> = playbackState
+        .map { it.currentTrack?.artistName }
+        .distinctUntilChanged()
+        .flatMapLatest { artistName: String? ->
+            flow<List<Track>> {
+                if (!artistName.isNullOrBlank()) {
+                    val allTracks = musicRepository.getAllTracks().firstOrNull().orEmpty()
+                    val localArtist = allTracks.filter { it.artistName.equals(artistName, ignoreCase = true) }
+                    val online = if (localArtist.size < 6) {
+                        musicRepository.searchTracks(artistName).getOrNull().orEmpty()
+                    } else emptyList()
+                    val combined: List<Track> = (localArtist + online)
+                        .filter { !it.artworkUrl.isNullOrBlank() }
+                        .distinctBy { it.id }
+                        .take(12)
+                    emit(combined)
+                } else {
+                    emit(emptyList())
+                }
+            }.flowOn(Dispatchers.IO)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
+
+    val similarTracks: StateFlow<List<Track>> = playbackState
+        .map { it.currentTrack }
+        .distinctUntilChanged()
+        .flatMapLatest { track: Track? ->
+            flow<List<Track>> {
+                if (track != null) {
+                    val allTracks = musicRepository.getAllTracks().firstOrNull().orEmpty()
+                    val related = allTracks.filter { 
+                        it.artistName != track.artistName && 
+                        !it.artworkUrl.isNullOrBlank()
+                    }
+                    val online = if (related.size < 6) {
+                        musicRepository.searchTracks("${track.artistName} mix").getOrNull().orEmpty()
+                    } else emptyList()
+                    val combined: List<Track> = (related + online)
+                        .filter { it.artistName != track.artistName && !it.artworkUrl.isNullOrBlank() }
+                        .distinctBy { it.id }
+                        .shuffled()
+                        .take(12)
+                    emit(combined)
+                } else {
+                    emit(emptyList())
+                }
+            }.flowOn(Dispatchers.IO)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
+        )
+
+    fun playTrack(track: Track) {
+        playbackConnection.playTrack(track)
+    }
 
     init {
         viewModelScope.launch {

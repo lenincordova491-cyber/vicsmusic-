@@ -114,6 +114,13 @@ class QueueManager @Inject constructor(
         persistQueue()
     }
 
+    fun updateTrackLiked(trackId: String, isLiked: Boolean) {
+        val updatedItems = _state.value.items.map {
+            if (it.id == trackId) it.copy(isLiked = isLiked) else it
+        }
+        _state.value = _state.value.copy(items = updatedItems)
+    }
+
     fun removeAt(index: Int) {
         val currentItems = _state.value.items.toMutableList()
         if (index !in currentItems.indices) return

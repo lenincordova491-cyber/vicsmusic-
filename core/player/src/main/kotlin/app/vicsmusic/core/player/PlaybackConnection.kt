@@ -103,4 +103,8 @@ class PlaybackConnection @Inject constructor(
     fun clearQueue() {
         playerManager.queueManager.clear()
     }
+
+    fun updateTrackLiked(trackId: String, isLiked: Boolean) {
+        playerManager.updateTrackLiked(trackId, isLiked)
+    }
 }

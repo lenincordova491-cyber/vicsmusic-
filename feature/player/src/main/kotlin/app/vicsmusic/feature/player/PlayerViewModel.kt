@@ -63,6 +63,25 @@ class PlayerViewModel @Inject constructor(
             initialValue = null
         )
 
+    init {
+        viewModelScope.launch {
+            playbackState
+                .map { it.currentTrack?.id }
+                .distinctUntilChanged()
+                .collect { trackId ->
+                    if (trackId != null) {
+                        musicRepository.getTrack(trackId).collect { dbTrack ->
+                            if (dbTrack != null && playbackState.value.currentTrack?.id == trackId) {
+                                if (playbackState.value.currentTrack?.isLiked != dbTrack.isLiked) {
+                                    playbackConnection.updateTrackLiked(trackId, dbTrack.isLiked)
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
     fun togglePlayPause() {
         playbackConnection.togglePlayPause()
     }
@@ -105,8 +124,13 @@ class PlayerViewModel @Inject constructor(
 
     fun toggleLike() {
         val currentTrack = playbackState.value.currentTrack ?: return
+        val newLiked = !currentTrack.isLiked
+        playbackConnection.updateTrackLiked(currentTrack.id, newLiked)
         viewModelScope.launch {
-            toggleLikeUseCase(currentTrack.id)
+            val result = toggleLikeUseCase(currentTrack)
+            if (result.isFailure) {
+                playbackConnection.updateTrackLiked(currentTrack.id, currentTrack.isLiked)
+            }
         }
     }
 }

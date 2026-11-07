@@ -348,6 +348,16 @@ class PlayerManager @Inject constructor(
         return queueManager.toggleRepeat()
     }
 
+    fun updateTrackLiked(trackId: String, isLiked: Boolean) {
+        val cur = _playbackState.value.currentTrack
+        if (cur != null && cur.id == trackId) {
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = cur.copy(isLiked = isLiked)
+            )
+        }
+        queueManager.updateTrackLiked(trackId, isLiked)
+    }
+
     private fun updatePlaybackState() {
         val currentTrack = queueManager.state.value.currentTrack
         val isPlaying = exoPlayer.isPlaying

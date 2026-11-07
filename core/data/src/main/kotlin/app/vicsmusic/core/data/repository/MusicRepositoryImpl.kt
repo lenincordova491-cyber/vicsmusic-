@@ -266,9 +266,24 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun toggleLike(trackId: String): Result<Boolean> = withContext(ioDispatcher) {
         runCatching {
             val current = trackDao.getTrack(trackId).firstOrNull()
-                ?: throw NoSuchElementException("Track $trackId not found in local database")
-            val newLikedStatus = !current.isLiked
-            trackDao.setLiked(trackId, newLikedStatus)
+            val newLikedStatus = if (current != null) !current.isLiked else true
+            if (current != null) {
+                trackDao.setLiked(trackId, newLikedStatus)
+            }
+            newLikedStatus
+        }
+    }
+
+    override suspend fun toggleTrackLike(track: Track): Result<Boolean> = withContext(ioDispatcher) {
+        runCatching {
+            val current = trackDao.getTrack(track.id).firstOrNull()
+            val newLikedStatus = if (current != null) !current.isLiked else true
+            val updatedEntity = if (current != null) {
+                current.copy(isLiked = newLikedStatus)
+            } else {
+                track.asEntity().copy(isLiked = true)
+            }
+            trackDao.upsertTrack(updatedEntity)
             newLikedStatus
         }
     }

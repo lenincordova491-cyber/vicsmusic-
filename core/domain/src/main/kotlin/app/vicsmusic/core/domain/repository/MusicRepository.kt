@@ -16,6 +16,7 @@ interface MusicRepository {
     suspend fun searchTracks(query: String): Result<List<Track>>
     suspend fun getStreamInfo(trackId: String, quality: AudioQuality): Result<StreamInfo>
     suspend fun toggleLike(trackId: String): Result<Boolean>
+    suspend fun toggleTrackLike(track: Track): Result<Boolean>
     suspend fun syncLocalTracks(): Result<Int>
     suspend fun getLyrics(track: Track): Result<Lyrics?>
     suspend fun downloadTrack(track: Track, onProgress: (Float) -> Unit = {}): Result<String>

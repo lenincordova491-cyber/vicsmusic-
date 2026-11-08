@@ -1,6 +1,8 @@
 package app.vicsmusic.feature.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,18 +19,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileDownloadDone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -38,23 +45,34 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.vicsmusic.core.model.Artist
 import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.ui.component.ArtworkImage
 import app.vicsmusic.core.ui.component.EmptyContent
 import app.vicsmusic.core.ui.component.ShimmerList
 import app.vicsmusic.core.ui.component.TrackRow
+import coil3.compose.AsyncImage
+import kotlin.math.abs
 
 private val SpotifyGreen = Color(0xFF1DB954)
 private val SpotifyDarkCard = Color(0xFF242424)
@@ -67,28 +85,70 @@ fun HomeRoute(
     onNavigateToPlayer: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedChart by remember { mutableStateOf<HomeChart?>(null) }
+    var selectedArtist by remember { mutableStateOf<Artist?>(null) }
 
-    HomeScreen(
-        uiState = uiState,
-        onTrackClick = { track, list ->
-            viewModel.playTrack(track, list)
-            onNavigateToPlayer()
-        },
-        onFilterSelected = viewModel::onFilterSelected,
-        onSettingsClick = { viewModel.setSettingsOpen(true) },
-        onDismissSettings = { viewModel.setSettingsOpen(false) },
-        onToggleExtension = viewModel::toggleExtension,
-        onDownloadTrack = viewModel::downloadTrack,
-        onResetArtistPreferences = viewModel::resetArtistPreferences,
-        onToggleAutoplay = viewModel::toggleAutoplay,
-        modifier = modifier
-    )
+    BackHandler(enabled = selectedChart != null || selectedArtist != null) {
+        selectedChart = null
+        selectedArtist = null
+    }
+
+    if (selectedChart != null) {
+        ChartDetailScreen(
+            chart = selectedChart!!,
+            onBack = { selectedChart = null },
+            onPlayTrack = { track, list ->
+                viewModel.playTrack(track, list)
+                onNavigateToPlayer()
+            },
+            onDownloadTrack = viewModel::downloadTrack,
+            modifier = modifier
+        )
+    } else if (selectedArtist != null) {
+        ArtistDetailScreen(
+            artist = selectedArtist!!,
+            onBack = { selectedArtist = null },
+            onPlayTrack = { track, list ->
+                viewModel.playTrack(track, list)
+                onNavigateToPlayer()
+            },
+            onDownloadTrack = viewModel::downloadTrack,
+            modifier = modifier
+        )
+    } else {
+        HomeScreen(
+            uiState = uiState,
+            onTrackClick = { track, list ->
+                viewModel.playTrack(track, list)
+                onNavigateToPlayer()
+            },
+            onArtistClick = { artist ->
+                selectedArtist = artist
+            },
+            onChartClick = { chart ->
+                selectedChart = chart
+            },
+            onRefresh = viewModel::refreshCatalog,
+            onFilterSelected = viewModel::onFilterSelected,
+            onSettingsClick = { viewModel.setSettingsOpen(true) },
+            onDismissSettings = { viewModel.setSettingsOpen(false) },
+            onToggleExtension = viewModel::toggleExtension,
+            onDownloadTrack = viewModel::downloadTrack,
+            onResetArtistPreferences = viewModel::resetArtistPreferences,
+            onToggleAutoplay = viewModel::toggleAutoplay,
+            modifier = modifier
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     uiState: HomeUiState,
     onTrackClick: (Track, List<Track>) -> Unit,
+    onArtistClick: (Artist) -> Unit,
+    onChartClick: (HomeChart) -> Unit,
+    onRefresh: () -> Unit,
     onFilterSelected: (HomeCategoryFilter) -> Unit,
     onSettingsClick: () -> Unit,
     onDismissSettings: () -> Unit,
@@ -98,7 +158,11 @@ fun HomeScreen(
     onToggleAutoplay: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    PullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize()
+    ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -224,6 +288,54 @@ fun HomeScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Tus Artistas Favoritos (Carrusel horizontal estilo Spotify con fotos circulares)
+            if (uiState.favoriteArtists.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item(key = "favorite_artists_carousel") {
+                    SectionHeader(title = "Tus artistas favoritos")
+                    Text(
+                        text = "Basado en tus preferencias y reproducciones",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.favoriteArtists, key = { "fav_art_${it.id}" }) { artist ->
+                            ArtistCircleCard(
+                                artist = artist,
+                                onClick = { onArtistClick(artist) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Listas de Éxitos y Rankings (Top 50 Perú, Top 50 Global, Virales)
+            if (uiState.topCharts.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
+                item(key = "top_charts_carousel") {
+                    SectionHeader(title = "Listas de éxitos y rankings")
+                    Text(
+                        text = "Las canciones más escuchadas en Perú y el mundo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp)
+                    ) {
+                        items(uiState.topCharts, key = { "top_chart_${it.id}" }) { chart ->
+                            ChartCard(
+                                chart = chart,
+                                onClick = { onChartClick(chart) }
+                            )
                         }
                     }
                 }
@@ -507,6 +619,649 @@ private fun SectionHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+private fun ArtistCircleCard(
+    artist: Artist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val initial = artist.name.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
+    val gradientColors = remember(artist.id) {
+        when (abs(artist.id.hashCode()) % 5) {
+            0 -> listOf(Color(0xFFE91E63), Color(0xFF673AB7))
+            1 -> listOf(Color(0xFF2196F3), Color(0xFF009688))
+            2 -> listOf(Color(0xFFFF9800), Color(0xFFE91E63))
+            3 -> listOf(Color(0xFF4CAF50), Color(0xFF009688))
+            else -> listOf(Color(0xFF9C27B0), Color(0xFF3F51B5))
+        }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .width(108.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(gradientColors)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = initial,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+
+            if (!artist.imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = artist.imageUrl,
+                    contentDescription = artist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = artist.name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = "Artista",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun ChartDetailScreen(
+    chart: HomeChart,
+    onBack: () -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    onDownloadTrack: (Track) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val gradientColors = when (chart.id) {
+        "top_50_peru" -> listOf(Color(0xFF004D40), Color(0xFF1DB954))
+        "top_50_global" -> listOf(Color(0xFF4A148C), Color(0xFF7C3AED))
+        "virales_peru" -> listOf(Color(0xFF991B1B), Color(0xFFEA580C))
+        "viva_latino" -> listOf(Color(0xFF9D174D), Color(0xFFE11D48))
+        else -> listOf(Color(0xFF1E3A8A), Color(0xFF2563EB))
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF121212)),
+        contentPadding = PaddingValues(bottom = 120.dp)
+    ) {
+        item(key = "chart_top_nav") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Volver",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = chart.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        item(key = "chart_header") {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Brush.verticalGradient(gradientColors))
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(88.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.25f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = chart.emoji,
+                                fontSize = 44.sp
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "PLAYLIST & RANKING",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = chart.title,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${chart.tracks.size} canciones • Actualizado hoy",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = chart.subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (chart.tracks.isNotEmpty()) {
+                                    onPlayTrack(chart.tracks.first(), chart.tracks)
+                                }
+                            },
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(SpotifyGreen)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Reproducir todo",
+                                tint = Color.Black,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (chart.tracks.isNotEmpty()) {
+                                    val shuffled = chart.tracks.shuffled()
+                                    onPlayTrack(shuffled.first(), shuffled)
+                                }
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.15f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Modo aleatorio",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "chart_list_header") {
+            Text(
+                text = "Lista de canciones",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+            )
+        }
+
+        itemsIndexed(chart.tracks, key = { index, track -> "chart_item_${track.id}_$index" }) { index, track ->
+            val rank = index + 1
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPlayTrack(track, chart.tracks) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "$rank",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (rank <= 3) FontWeight.Bold else FontWeight.Normal,
+                    color = if (rank <= 3) SpotifyGreen else Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(28.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                ArtworkImage(
+                    artworkUrl = track.artworkUrl,
+                    contentDescription = track.title,
+                    size = 48.dp,
+                    cornerRadius = 8.dp
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = track.artistName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(onClick = { onDownloadTrack(track) }) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Descargar",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ArtistDetailScreen(
+    artist: Artist,
+    onBack: () -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    onDownloadTrack: (Track) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isFollowing by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF121212)),
+        contentPadding = PaddingValues(bottom = 120.dp)
+    ) {
+        item(key = "artist_back_nav") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Volver",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        item(key = "artist_hero") {
+            val initial = artist.name.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
+            val gradientColors = remember(artist.id) {
+                when (abs(artist.id.hashCode()) % 5) {
+                    0 -> listOf(Color(0xFFE91E63), Color(0xFF673AB7))
+                    1 -> listOf(Color(0xFF2196F3), Color(0xFF009688))
+                    2 -> listOf(Color(0xFFFF9800), Color(0xFFE91E63))
+                    3 -> listOf(Color(0xFF4CAF50), Color(0xFF009688))
+                    else -> listOf(Color(0xFF9C27B0), Color(0xFF3F51B5))
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(130.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(gradientColors)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = initial,
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                    if (!artist.imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = artist.imageUrl,
+                            contentDescription = artist.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = artist.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Verified,
+                        contentDescription = "Verificado",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Text(
+                    text = "Artista verificado • Oyentes mensuales en aumento",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+
+                val bio = artist.bio
+                if (!bio.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = bio,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.LightGray,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isFollowing) SpotifyGreen else Color.Transparent
+                        ),
+                        modifier = Modifier
+                            .clickable { isFollowing = !isFollowing }
+                            .border(
+                                width = 1.dp,
+                                color = if (isFollowing) SpotifyGreen else Color.Gray,
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                    ) {
+                        Text(
+                            text = if (isFollowing) "Siguiendo" else "Seguir",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isFollowing) Color.Black else Color.White,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (artist.topTracks.isNotEmpty()) {
+                                onPlayTrack(artist.topTracks.first(), artist.topTracks)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(SpotifyGreen)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Reproducir artista",
+                            tint = Color.Black,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (artist.topTracks.isNotEmpty()) {
+                                val shuffled = artist.topTracks.shuffled()
+                                onPlayTrack(shuffled.first(), shuffled)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.15f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Modo aleatorio",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "artist_popular_header") {
+            Text(
+                text = "Canciones populares",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp)
+            )
+        }
+
+        if (artist.topTracks.isEmpty()) {
+            item(key = "no_artist_tracks") {
+                Text(
+                    text = "Próximamente más temas de ${artist.name}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
+            }
+        } else {
+            itemsIndexed(artist.topTracks, key = { idx, t -> "art_tr_${t.id}_$idx" }) { index, track ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlayTrack(track, artist.topTracks) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (index < 3) FontWeight.Bold else FontWeight.Normal,
+                        color = if (index < 3) SpotifyGreen else Color.Gray,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(28.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    ArtworkImage(
+                        artworkUrl = track.artworkUrl,
+                        contentDescription = track.title,
+                        size = 48.dp,
+                        cornerRadius = 8.dp
+                    )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track.albumName ?: artist.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    IconButton(onClick = { onDownloadTrack(track) }) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Descargar",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartCard(
+    chart: HomeChart,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val gradientColors = when (chart.id) {
+        "top_50_peru" -> listOf(Color(0xFF004D40), Color(0xFF1DB954))
+        "top_50_global" -> listOf(Color(0xFF4A148C), Color(0xFF7C3AED))
+        "virales_peru" -> listOf(Color(0xFF991B1B), Color(0xFFEA580C))
+        "viva_latino" -> listOf(Color(0xFF9D174D), Color(0xFFE11D48))
+        else -> listOf(Color(0xFF1E3A8A), Color(0xFF2563EB))
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        modifier = modifier
+            .width(156.dp)
+            .height(180.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(gradientColors))
+                .padding(12.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = chart.emoji,
+                        fontSize = 28.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(SpotifyGreen),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Reproducir",
+                            tint = Color.Black,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = chart.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = chart.subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
 }
 
 @Composable

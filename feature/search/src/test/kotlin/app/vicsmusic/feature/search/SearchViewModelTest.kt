@@ -1,5 +1,6 @@
 package app.vicsmusic.feature.search
 
+import app.vicsmusic.core.domain.repository.MusicRepository
 import app.vicsmusic.core.domain.usecase.SearchTracksUseCase
 import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.ExtensionRegistry
@@ -7,10 +8,12 @@ import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.network.ExtensionRegistryClient
 import app.vicsmusic.core.player.PlaybackConnection
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -31,6 +34,7 @@ class SearchViewModelTest {
     private val searchTracksUseCase: SearchTracksUseCase = mockk()
     private val playbackConnection: PlaybackConnection = mockk(relaxed = true)
     private val extensionRegistryClient: ExtensionRegistryClient = mockk()
+    private val musicRepository: MusicRepository = mockk(relaxed = true)
 
     private val track1 = Track(
         id = "1",
@@ -56,6 +60,7 @@ class SearchViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        every { musicRepository.getSearchHistory(any()) } returns flowOf(emptyList())
         coEvery { extensionRegistryClient.fetchRegistry(any()) } returns Result.success(
             ExtensionRegistry(
                 version = 1,
@@ -78,7 +83,7 @@ class SearchViewModelTest {
 
     @Test
     fun `initial load loads catalog extensions`() = runTest(testDispatcher) {
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -91,7 +96,7 @@ class SearchViewModelTest {
     fun `when query is typed, debounces and performs search`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1, track2))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Queen")
 
         advanceTimeBy(350)
@@ -107,7 +112,7 @@ class SearchViewModelTest {
     fun `filter changes filter results accordingly`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Bohemian") } returns Result.success(listOf(track1))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Bohemian")
 
         advanceTimeBy(350)
@@ -124,7 +129,7 @@ class SearchViewModelTest {
     fun `playTrack delegates to playbackConnection playQueue`() = runTest(testDispatcher) {
         coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1))
 
-        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient)
+        val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Queen")
         advanceTimeBy(350)
         advanceUntilIdle()

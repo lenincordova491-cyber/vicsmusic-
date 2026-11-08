@@ -484,6 +484,30 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun getSearchHistory(limit: Int): Flow<List<String>> =
+        searchHistoryDao.getRecentSearches(limit).map { list -> list.map { it.query } }
+
+    override suspend fun addSearchHistory(query: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            val clean = query.trim()
+            if (clean.isNotEmpty()) {
+                searchHistoryDao.insertSearch(SearchHistoryEntity(clean, System.currentTimeMillis()))
+            }
+        }
+    }
+
+    override suspend fun deleteSearchHistory(query: String): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            searchHistoryDao.deleteSearch(query)
+        }
+    }
+
+    override suspend fun clearSearchHistory(): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            searchHistoryDao.clearSearchHistory()
+        }
+    }
+
     private fun resolveSourceId(trackId: String): String {
         if (trackId.startsWith("local_")) return LocalMusicSource.SOURCE_ID
         if (trackId.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)) {

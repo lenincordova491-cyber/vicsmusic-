@@ -1,0 +1,29 @@
+{
+  "app_name": "Big Music",
+  "package_name": "app.vicsmusic.debug",
+  "latest_version": "1.1.0",
+  "version_code": 2,
+  "min_supported_version_code": 1,
+  "release_date": "2026-11-08T00:00:00Z",
+  "download_url": "https://github.com/REPLACE_WITH_YOUR_USER/BigMusic/releases/latest/download/app-debug.apk",
+  "release_notes": {
+    "es": [
+      "✨ Nueva vista detallada para Listas de Éxitos y Rankings (Top 50 Perú, Top 50 Global, Virales y Viva Latino) con navegación completa de 50 temas clasificados.",
+      "🎤 Perfiles interactivos para Tus Artistas Favoritos con fotos de alta resolución, insignia de verificación, biografías y lista de canciones más populares.",
+      "🔍 Historial de búsquedas persistente en Room con borrado individual y limpieza completa.",
+      "⚡ Optimización de carga de imágenes con Coil y degradados con monogramas de respaldo para navegación ultra fluida.",
+      "🎨 Nuevo logotipo e identidad visual profesional para Big Music / Vicsmusic.",
+      "🔄 Soporte para Pull-to-Refresh en pantalla de inicio con rotación dinámica de catálogo."
+    ],
+    "en": [
+      "✨ Added full playlist/chart detail view for Top 50 and viral rankings.",
+      "🎤 Added interactive artist profile views with bio, badges, and top songs.",
+      "🔍 Persistent search history with item deletion and clear-all support.",
+      "⚡ Optimized image caching and avatar fallbacks for ultra-smooth scrolling.",
+      "🎨 New professional obsidian branding icon.",
+      "🔄 Pull-to-refresh on home feed with dynamic catalog rotation."
+    ]
+  },
+  "mandatory": false,
+  "sha256": ""
+}

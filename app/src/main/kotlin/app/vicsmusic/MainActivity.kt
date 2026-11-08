@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,14 +61,20 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            val userPreferences by viewModel.userPreferences.collectAsStateWithLifecycle()
-            val darkTheme = when (userPreferences.themeMode) {
-                app.vicsmusic.core.model.ThemeMode.LIGHT -> false
-                app.vicsmusic.core.model.ThemeMode.DARK -> true
-                app.vicsmusic.core.model.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            val mainUiState by viewModel.mainUiState.collectAsStateWithLifecycle()
+            val darkTheme = when (val state = mainUiState) {
+                is MainUiState.Ready -> when (state.userPreferences.themeMode) {
+                    app.vicsmusic.core.model.ThemeMode.LIGHT -> false
+                    app.vicsmusic.core.model.ThemeMode.DARK -> true
+                    app.vicsmusic.core.model.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                }
+                MainUiState.Loading -> isSystemInDarkTheme()
             }
             VicsmusicTheme(darkTheme = darkTheme) {
-                VicsmusicAppRoot(viewModel = viewModel)
+                VicsmusicAppRoot(
+                    mainUiState = mainUiState,
+                    viewModel = viewModel
+                )
             }
         }
     }
@@ -75,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VicsmusicAppRoot(
+    mainUiState: MainUiState,
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
@@ -127,15 +135,26 @@ fun VicsmusicAppRoot(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        if (!userPreferences.isOnboardingCompleted) {
-            ArtistPickerRoute(
-                onOnboardingFinished = {
-                    // Reactive userPreferences flow will automatically transition to main screen
-                }
-            )
-        } else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Scaffold(
+        when (val state = mainUiState) {
+            MainUiState.Loading -> {
+                // Show clean dark background while DataStore initializes (zero flicker)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                )
+            }
+            is MainUiState.Ready -> {
+                val preferences = state.userPreferences
+                if (!preferences.isOnboardingCompleted) {
+                    ArtistPickerRoute(
+                        onOnboardingFinished = {
+                            // Reactive userPreferences flow will automatically transition to main screen
+                        }
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Scaffold(
                     bottomBar = {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             // Persistent MiniPlayer right above bottom navigation bar
@@ -206,4 +225,6 @@ fun VicsmusicAppRoot(
             }
         }
     }
+    }
+}
 }

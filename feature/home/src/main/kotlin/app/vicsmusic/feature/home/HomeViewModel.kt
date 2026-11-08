@@ -6,6 +6,7 @@ import app.vicsmusic.core.domain.engine.AdaptiveRecommendationEngine
 import app.vicsmusic.core.domain.engine.ListeningEvent
 import app.vicsmusic.core.domain.repository.MusicRepository
 import app.vicsmusic.core.domain.repository.UserPreferencesRepository
+import app.vicsmusic.core.model.Artist
 import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.player.PlaybackConnection
@@ -30,13 +31,24 @@ enum class HomeCategoryFilter {
     DOWNLOADS
 }
 
+data class HomeChart(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val emoji: String,
+    val tracks: List<Track>
+)
+
 data class HomeUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val greeting: String = "Buenas tardes",
     val tasteSummaryLabel: String = "Algoritmo adaptativo • Personalizado para ti",
     val selectedFilter: HomeCategoryFilter = HomeCategoryFilter.ALL,
     val quickAccessTracks: List<Track> = emptyList(),
     val featuredRelease: Track? = null,
+    val favoriteArtists: List<Artist> = emptyList(),
+    val topCharts: List<HomeChart> = emptyList(),
     val dailyMix: List<Track> = emptyList(),
     val recommendedTracks: List<Track> = emptyList(),
     val trendingTracks: List<Track> = emptyList(),
@@ -66,6 +78,8 @@ class HomeViewModel @Inject constructor(
             isLoading = false,
             quickAccessTracks = STARTER_TRACKS.take(6),
             featuredRelease = STARTER_TRACKS.first(),
+            favoriteArtists = CURATED_ARTISTS,
+            topCharts = TOP_CHARTS,
             dailyMix = STARTER_TRACKS.drop(1).take(10),
             recommendedTracks = STARTER_TRACKS.takeLast(10),
             trendingTracks = STARTER_TRACKS.take(15),
@@ -212,6 +226,14 @@ class HomeViewModel @Inject constructor(
                     tasteSummaryLabel = recommendations.tasteProfile.tasteSummaryLabel,
                     quickAccessTracks = quickAccess,
                     featuredRelease = hero,
+                    favoriteArtists = if (prefs.favoriteArtistIds.isNotEmpty()) {
+                        CURATED_ARTISTS.sortedByDescending { artist ->
+                            if (prefs.favoriteArtistIds.any { it.equals(artist.id, true) || it.equals(artist.name, true) }) 1 else 0
+                        }
+                    } else {
+                        CURATED_ARTISTS
+                    },
+                    topCharts = TOP_CHARTS,
                     dailyMix = (recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.drop(1)).distinctBy { it.id }.take(12),
                     recommendedTracks = (recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.reversed()).distinctBy { it.id }.take(12),
                     trendingTracks = currentTrending,
@@ -255,6 +277,38 @@ class HomeViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(trendingTracks = (trending.filter { t -> t.sourceId != "local" } + STARTER_TRACKS).distinctBy { t -> t.id }.take(25))
                 }
+            }
+        }
+    }
+
+    fun refreshCatalog() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val onlineQueries = listOf(
+                "Top 50 Peru",
+                "Virales Peru 2026",
+                "Canserbero Exitos",
+                "Viva Latino",
+                "Ke Personajes En Vivo",
+                "Rock Clasico en Espanol",
+                "Feid Ferxxo",
+                "Cumbia Sanjuanera",
+                "Bad Bunny Hits"
+            ).shuffled().take(4)
+            for (query in onlineQueries) {
+                musicRepository.searchTracks(query)
+            }
+            val all = musicRepository.getAllTracks().first()
+            val online = all.filter { it.sourceId != "local" && !it.artworkUrl.isNullOrBlank() }
+            val pool = (online + STARTER_TRACKS).distinctBy { it.id }.shuffled()
+            _uiState.update { current ->
+                current.copy(
+                    isRefreshing = false,
+                    quickAccessTracks = pool.take(6),
+                    dailyMix = pool.drop(6).take(12),
+                    recommendedTracks = pool.drop(18).take(12),
+                    trendingTracks = pool.drop(30).take(15)
+                )
             }
         }
     }
@@ -1014,6 +1068,329 @@ class HomeViewModel @Inject constructor(
             )
         )
 
-        val STARTER_TRACKS = CUMBIA_TRACKS + ROCK_POP_TRACKS + URBAN_TRACKS + SALSA_TRACKS
+        val CANSERBERO_TRACKS = listOf(
+            Track(
+                id = "yt_canserbero_pensando",
+                sourceId = "ytmusic",
+                title = "Pensando en Ti",
+                artistId = "canserbero",
+                artistName = "Canserbero",
+                albumId = "muerte",
+                albumName = "Muerte",
+                durationMs = 260000L,
+                artworkUrl = "https://i.ytimg.com/vi/W4qfK4o8aA8/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_canserbero_jeremias",
+                sourceId = "ytmusic",
+                title = "Jeremías 17:5",
+                artistId = "canserbero",
+                artistName = "Canserbero",
+                albumId = "muerte",
+                albumName = "Muerte",
+                durationMs = 310000L,
+                artworkUrl = "https://i.ytimg.com/vi/a_6cWJ_WwzM/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_canserbero_epico",
+                sourceId = "ytmusic",
+                title = "Es Épico",
+                artistId = "canserbero",
+                artistName = "Canserbero",
+                albumId = "muerte",
+                albumName = "Muerte",
+                durationMs = 360000L,
+                artworkUrl = "https://i.ytimg.com/vi/w6f3Pq0vH9M/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_canserbero_querer",
+                sourceId = "ytmusic",
+                title = "Querer Querernos",
+                artistId = "canserbero",
+                artistName = "Canserbero",
+                albumId = "vida",
+                albumName = "Vida",
+                durationMs = 245000L,
+                artworkUrl = "https://i.ytimg.com/vi/8aL0F9L_Z8w/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_canserbero_maquiavelico",
+                sourceId = "ytmusic",
+                title = "Maquiavélico",
+                artistId = "canserbero",
+                artistName = "Canserbero",
+                albumId = "muerte",
+                albumName = "Muerte",
+                durationMs = 280000L,
+                artworkUrl = "https://i.ytimg.com/vi/Yw_eP1WwQ1Q/hqdefault.jpg"
+            )
+        )
+
+        val KE_PERSONAJES_TRACKS = listOf(
+            Track(
+                id = "yt_ke_un_finde",
+                sourceId = "ytmusic",
+                title = "Un Finde | CROSSOVER #2",
+                artistId = "ke_personajes",
+                artistName = "Ke Personajes, Big One, FMK",
+                albumId = "un_finde",
+                albumName = "Un Finde",
+                durationMs = 170000L,
+                artworkUrl = "https://i.ytimg.com/vi/M27u4C1g2vA/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_ke_pobre_corazon",
+                sourceId = "ytmusic",
+                title = "Pobre Corazón",
+                artistId = "ke_personajes",
+                artistName = "Ke Personajes & Onda Sabanera",
+                albumId = "pobre_corazon",
+                albumName = "En Vivo",
+                durationMs = 195000L,
+                artworkUrl = "https://i.ytimg.com/vi/E0pB_8V9KzE/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_ke_ojitos_lindos",
+                sourceId = "ytmusic",
+                title = "Ojitos Lindos (En Vivo)",
+                artistId = "ke_personajes",
+                artistName = "Ke Personajes",
+                albumId = "ojitos_lindos",
+                albumName = "En Vivo en el Luna Park",
+                durationMs = 210000L,
+                artworkUrl = "https://i.ytimg.com/vi/4eFvJk_s_uM/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_ke_costumbres",
+                sourceId = "ytmusic",
+                title = "Costumbres",
+                artistId = "ke_personajes",
+                artistName = "Ke Personajes",
+                albumId = "costumbres",
+                albumName = "En Vivo",
+                durationMs = 220000L,
+                artworkUrl = "https://i.ytimg.com/vi/h7xYq2K23jU/hqdefault.jpg"
+            )
+        )
+
+        val AGUA_MARINA_TRACKS = listOf(
+            Track(
+                id = "yt_MSFR0st6yJM",
+                sourceId = "ytmusic",
+                title = "Tu Traición Se Acabó",
+                artistId = "agua_marina",
+                artistName = "Agua Marina",
+                albumId = "tu_traicion",
+                albumName = "Tu Traición Se Acabó",
+                durationMs = 250000L,
+                artworkUrl = "https://i.ytimg.com/vi/MSFR0st6yJM/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_am_paloma_ajena",
+                sourceId = "ytmusic",
+                title = "Paloma Ajena",
+                artistId = "agua_marina",
+                artistName = "Agua Marina",
+                albumId = "paloma_ajena",
+                albumName = "Grandes Éxitos",
+                durationMs = 240000L,
+                artworkUrl = "https://i.ytimg.com/vi/MSFR0st6yJM/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_am_asi_es_el_amor",
+                sourceId = "ytmusic",
+                title = "Así Es El Amor",
+                artistId = "agua_marina",
+                artistName = "Agua Marina",
+                albumId = "asi_es_el_amor",
+                albumName = "Éxitos de Oro",
+                durationMs = 260000L,
+                artworkUrl = "https://i.ytimg.com/vi/MSFR0st6yJM/hqdefault.jpg"
+            )
+        )
+
+        val DADDY_YANKEE_TRACKS = listOf(
+            Track(
+                id = "yt_dy_gasolina",
+                sourceId = "ytmusic",
+                title = "Gasolina",
+                artistId = "daddy_yankee",
+                artistName = "Daddy Yankee",
+                albumId = "barrio_fino",
+                albumName = "Barrio Fino",
+                durationMs = 192000L,
+                artworkUrl = "https://i.ytimg.com/vi/yL37-2lYhXQ/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_dy_con_calma",
+                sourceId = "ytmusic",
+                title = "Con Calma",
+                artistId = "daddy_yankee",
+                artistName = "Daddy Yankee & Snow",
+                albumId = "con_calma_alb",
+                albumName = "Con Calma",
+                durationMs = 193000L,
+                artworkUrl = "https://i.ytimg.com/vi/DiItGE3eAyQ/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_dy_llamado_emergencia",
+                sourceId = "ytmusic",
+                title = "Llamado de Emergencia",
+                artistId = "daddy_yankee",
+                artistName = "Daddy Yankee",
+                albumId = "talento_de_barrio",
+                albumName = "Talento de Barrio",
+                durationMs = 240000L,
+                artworkUrl = "https://i.ytimg.com/vi/u9r5Zc_bB1E/hqdefault.jpg"
+            )
+        )
+
+        val ANGELES_AZULES_TRACKS = listOf(
+            Track(
+                id = "yt_aa_nunca_es_suficiente",
+                sourceId = "ytmusic",
+                title = "Nunca Es Suficiente",
+                artistId = "angeles_azules",
+                artistName = "Los Ángeles Azules ft. Natalia Lafourcade",
+                albumId = "esto_si_es_cumbia",
+                albumName = "Esto Sí Es Cumbia",
+                durationMs = 265000L,
+                artworkUrl = "https://i.ytimg.com/vi/Veo7zVW9lEw/hqdefault.jpg"
+            ),
+            Track(
+                id = "yt_aa_17_anos",
+                sourceId = "ytmusic",
+                title = "17 Años",
+                artistId = "angeles_azules",
+                artistName = "Los Ángeles Azules",
+                albumId = "17_anos_alb",
+                albumName = "Grandes Éxitos",
+                durationMs = 215000L,
+                artworkUrl = "https://i.ytimg.com/vi/Veo7zVW9lEw/hqdefault.jpg"
+            )
+        )
+
+        val CURATED_ARTISTS = listOf(
+            Artist(
+                id = "canserbero",
+                sourceId = "ytmusic",
+                name = "Canserbero",
+                imageUrl = "https://i.ytimg.com/vi/a_6cWJ_WwzM/hqdefault.jpg",
+                bio = "Rap consciente / Leyenda indiscutible del rap latinoamericano",
+                topTracks = CANSERBERO_TRACKS
+            ),
+            Artist(
+                id = "ke_personajes",
+                sourceId = "ytmusic",
+                name = "Ke Personajes",
+                imageUrl = "https://i.ytimg.com/vi/M27u4C1g2vA/hqdefault.jpg",
+                bio = "Cumbia argentina y fenómeno vocal liderado por Emanuel Noir",
+                topTracks = KE_PERSONAJES_TRACKS
+            ),
+            Artist(
+                id = "agua_marina",
+                sourceId = "ytmusic",
+                name = "Agua Marina",
+                imageUrl = "https://i.ytimg.com/vi/MSFR0st6yJM/hqdefault.jpg",
+                bio = "Cumbia elegante de Sechura, Piura para todo el Perú",
+                topTracks = AGUA_MARINA_TRACKS
+            ),
+            Artist(
+                id = "grupo_5",
+                sourceId = "ytmusic",
+                name = "Grupo 5",
+                imageUrl = "https://i.ytimg.com/vi/W4qfK4o8aA8/hqdefault.jpg",
+                bio = "El Grupo de Oro del Perú y referente número uno de la cumbia",
+                topTracks = CUMBIA_TRACKS.filter { it.artistId == "grupo_5" }
+            ),
+            Artist(
+                id = "coldplay",
+                sourceId = "ytmusic",
+                name = "Coldplay",
+                imageUrl = "https://i.ytimg.com/vi/RB-RcX5DS5A/hqdefault.jpg",
+                bio = "Banda británica de rock pop e himnos generacionales",
+                topTracks = ROCK_POP_TRACKS.filter { it.artistId == "coldplay" }
+            ),
+            Artist(
+                id = "bad_bunny",
+                sourceId = "ytmusic",
+                name = "Bad Bunny",
+                imageUrl = "https://i.ytimg.com/vi/QpKkNIT84GY/hqdefault.jpg",
+                bio = "Trap, reggaetón y figura global de la música urbana",
+                topTracks = URBAN_TRACKS.filter { it.artistId == "bad_bunny" }
+            ),
+            Artist(
+                id = "feid",
+                sourceId = "ytmusic",
+                name = "Feid",
+                imageUrl = "https://i.ytimg.com/vi/ZA7ZKB8Mo9k/hqdefault.jpg",
+                bio = "Ferxxo / El sonido fresco y romántico del reggaetón de Medellín",
+                topTracks = URBAN_TRACKS.filter { it.artistId == "feid" }
+            ),
+            Artist(
+                id = "daddy_yankee",
+                sourceId = "ytmusic",
+                name = "Daddy Yankee",
+                imageUrl = "https://i.ytimg.com/vi/yL37-2lYhXQ/hqdefault.jpg",
+                bio = "El máximo exponente y Rey del Reggaetón mundial",
+                topTracks = DADDY_YANKEE_TRACKS
+            ),
+            Artist(
+                id = "soda_stereo",
+                sourceId = "ytmusic",
+                name = "Soda Stereo",
+                imageUrl = "https://i.ytimg.com/vi/T_FkEw27XJ0/hqdefault.jpg",
+                bio = "Pioneros absolutos del rock en español y leyendas de América Latina",
+                topTracks = ROCK_POP_TRACKS.filter { it.artistId == "soda_stereo" }
+            ),
+            Artist(
+                id = "angeles_azules",
+                sourceId = "ytmusic",
+                name = "Los Ángeles Azules",
+                imageUrl = "https://i.ytimg.com/vi/Veo7zVW9lEw/hqdefault.jpg",
+                bio = "Cumbia sonidera mexicana: De Iztapalapa para el mundo",
+                topTracks = ANGELES_AZULES_TRACKS
+            )
+        )
+
+        val TOP_CHARTS = listOf(
+            HomeChart(
+                id = "top_50_peru",
+                title = "Top 50 - Perú",
+                subtitle = "Tu actualización diaria de las canciones más sonadas en Perú",
+                emoji = "🇵🇪",
+                tracks = (CUMBIA_TRACKS + CANSERBERO_TRACKS + URBAN_TRACKS).shuffled()
+            ),
+            HomeChart(
+                id = "top_50_global",
+                title = "Top 50 - Global",
+                subtitle = "Las canciones más escuchadas en el mundo ahora mismo",
+                emoji = "🌍",
+                tracks = (ROCK_POP_TRACKS + URBAN_TRACKS + CANSERBERO_TRACKS).shuffled()
+            ),
+            HomeChart(
+                id = "virales_peru",
+                title = "Virales Perú",
+                subtitle = "Tendencias en redes sociales y streaming en el país",
+                emoji = "🔥",
+                tracks = (CUMBIA_TRACKS + URBAN_TRACKS).shuffled()
+            ),
+            HomeChart(
+                id = "viva_latino",
+                title = "Viva Latino",
+                subtitle = "El epicentro del ritmo y los mayores hits de la música latina",
+                emoji = "✨",
+                tracks = (URBAN_TRACKS + SALSA_TRACKS + CUMBIA_TRACKS).shuffled()
+            ),
+            HomeChart(
+                id = "los_90_peru",
+                title = "Los 90s & Clásicos",
+                subtitle = "Nostalgia, rock en español y cumbias doradas",
+                emoji = "📻",
+                tracks = (ROCK_POP_TRACKS + CUMBIA_TRACKS).shuffled()
+            )
+        )
+
+        val STARTER_TRACKS = CUMBIA_TRACKS + ROCK_POP_TRACKS + URBAN_TRACKS + SALSA_TRACKS + CANSERBERO_TRACKS + KE_PERSONAJES_TRACKS + AGUA_MARINA_TRACKS + DADDY_YANKEE_TRACKS + ANGELES_AZULES_TRACKS
     }
 }

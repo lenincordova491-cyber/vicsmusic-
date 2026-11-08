@@ -15,9 +15,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+sealed interface MainUiState {
+    data object Loading : MainUiState
+    data class Ready(val userPreferences: UserPreferences) : MainUiState
+}
 
 sealed interface LocalMediaUiState {
     data object Idle : LocalMediaUiState
@@ -32,6 +38,14 @@ class MainViewModel @Inject constructor(
     private val playbackConnection: PlaybackConnection,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
+
+    val mainUiState: StateFlow<MainUiState> = userPreferencesRepository.userPreferences
+        .map { MainUiState.Ready(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = MainUiState.Loading
+        )
 
     val userPreferences: StateFlow<UserPreferences> = userPreferencesRepository.userPreferences
         .stateIn(

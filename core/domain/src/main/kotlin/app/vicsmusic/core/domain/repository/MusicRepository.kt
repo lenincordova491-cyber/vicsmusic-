@@ -24,4 +24,8 @@ interface MusicRepository {
     suspend fun recordPlayHistory(trackId: String, completionPercentage: Float)
     suspend fun getAvailableExtensions(): Result<List<app.vicsmusic.core.model.ExtensionItem>>
     suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit>
+    fun getSearchHistory(limit: Int = 20): Flow<List<String>>
+    suspend fun addSearchHistory(query: String): Result<Unit>
+    suspend fun deleteSearchHistory(query: String): Result<Unit>
+    suspend fun clearSearchHistory(): Result<Unit>
 }

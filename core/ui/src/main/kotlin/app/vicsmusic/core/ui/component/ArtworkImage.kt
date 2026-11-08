@@ -2,6 +2,7 @@ package app.vicsmusic.core.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,28 +27,25 @@ fun ArtworkImage(
     size: Dp = 48.dp,
     cornerRadius: Dp = 8.dp
 ) {
-    if (!artworkUrl.isNullOrBlank()) {
-        AsyncImage(
-            model = artworkUrl,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Crop,
-            modifier = modifier
-                .size(size)
-                .clip(RoundedCornerShape(cornerRadius))
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(VicsSurfaceContainerDark),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.MusicNote,
+            contentDescription = null,
+            tint = VicsPrimary.copy(alpha = 0.5f),
+            modifier = Modifier.size(size * 0.45f)
         )
-    } else {
-        Box(
-            modifier = modifier
-                .size(size)
-                .clip(RoundedCornerShape(cornerRadius))
-                .background(VicsSurfaceContainerDark),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = VicsPrimary,
-                modifier = Modifier.size(size * 0.5f)
+        if (!artworkUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = artworkUrl,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
         }
     }

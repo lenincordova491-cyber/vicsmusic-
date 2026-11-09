@@ -35,7 +35,7 @@ import app.vicsmusic.core.database.entity.TrackEntity
         QueueEntity::class,
         LyricsCacheEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class VicsmusicDatabase : RoomDatabase() {

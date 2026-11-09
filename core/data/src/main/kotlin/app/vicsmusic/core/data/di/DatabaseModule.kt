@@ -2,6 +2,8 @@ package app.vicsmusic.core.data.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.vicsmusic.core.database.VicsmusicDatabase
 import app.vicsmusic.core.database.dao.AlbumDao
 import app.vicsmusic.core.database.dao.ArtistDao
@@ -23,6 +25,18 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_artistName` ON `tracks` (`artistName`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_albumId` ON `tracks` (`albumId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_isLiked` ON `tracks` (`isLiked`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_lastPlayedAt` ON `tracks` (`lastPlayedAt`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_sourceId_isLiked_lastPlayedAt` ON `tracks` (`sourceId`, `isLiked`, `lastPlayedAt`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_play_history_playedAt` ON `play_history` (`playedAt`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_play_history_trackId_playedAt` ON `play_history` (`trackId`, `playedAt`)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): VicsmusicDatabase {
@@ -30,7 +44,10 @@ object DatabaseModule {
             context,
             VicsmusicDatabase::class.java,
             "vicsmusic.db"
-        ).fallbackToDestructiveMigration().build()
+        )
+            .addMigrations(MIGRATION_1_2)
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides

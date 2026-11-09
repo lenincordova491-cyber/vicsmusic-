@@ -66,6 +66,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.mutableStateOf
@@ -82,6 +83,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.vicsmusic.core.model.Lyrics
 import app.vicsmusic.core.model.PlaybackState
 import app.vicsmusic.core.model.PlaybackStatus
 import app.vicsmusic.core.model.RepeatMode
@@ -161,9 +163,13 @@ fun NowPlayingScreen(
         }
     }
 
-    val displayedLyrics = remember(lyrics, selectedLanguage, track?.title, track?.artistName) {
-        if (lyrics == null) null
-        else LyricsTranslationEngine.translateLyrics(lyrics, selectedLanguage, track?.title, track?.artistName)
+    val displayedLyrics by produceState<Lyrics?>(initialValue = lyrics, key1 = lyrics, key2 = selectedLanguage) {
+        val currLyrics = lyrics
+        if (currLyrics == null || selectedLanguage == TranslationLanguage.ORIGINAL) {
+            value = currLyrics
+        } else {
+            value = LyricsTranslationEngine.translateLyrics(currLyrics, selectedLanguage, track?.title, track?.artistName)
+        }
     }
 
     val hasLyrics = lyrics != null && lyrics.lines.isNotEmpty()

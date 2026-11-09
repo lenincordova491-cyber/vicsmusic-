@@ -49,6 +49,25 @@ class PlayerViewModel @Inject constructor(
             initialValue = playbackConnection.queueState.value
         )
 
+    val downloadedTrackIds: StateFlow<Set<String>> = musicRepository.getDownloadedTracks()
+        .map { tracks -> tracks.map { it.id }.toSet() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptySet()
+        )
+
+    private val _downloadingTrackId = MutableStateFlow<String?>(null)
+    val downloadingTrackId: StateFlow<String?> = _downloadingTrackId.asStateFlow()
+
+    fun downloadTrack(track: Track) {
+        viewModelScope.launch {
+            _downloadingTrackId.value = track.id
+            musicRepository.downloadTrack(track)
+            _downloadingTrackId.value = null
+        }
+    }
+
     val lyrics: StateFlow<Lyrics?> = playbackState
         .map { it.currentTrack?.id }
         .distinctUntilChanged()

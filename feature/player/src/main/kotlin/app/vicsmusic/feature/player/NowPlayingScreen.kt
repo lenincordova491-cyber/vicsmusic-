@@ -31,9 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FileDownloadDone
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
@@ -105,6 +107,12 @@ fun NowPlayingRoute(
     val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
     val artistTracks by viewModel.artistTracks.collectAsStateWithLifecycle()
     val similarTracks by viewModel.similarTracks.collectAsStateWithLifecycle()
+    val downloadedTrackIds by viewModel.downloadedTrackIds.collectAsStateWithLifecycle()
+    val downloadingTrackId by viewModel.downloadingTrackId.collectAsStateWithLifecycle()
+
+    val currentTrack = playbackState.currentTrack
+    val isDownloaded = currentTrack?.id != null && downloadedTrackIds.contains(currentTrack.id)
+    val isDownloading = currentTrack?.id != null && downloadingTrackId == currentTrack.id
 
     NowPlayingScreen(
         playbackState = playbackState,
@@ -120,6 +128,9 @@ fun NowPlayingRoute(
         onShuffleClick = viewModel::toggleShuffle,
         onRepeatClick = viewModel::toggleRepeat,
         onLikeClick = viewModel::toggleLike,
+        onDownloadClick = { track -> viewModel.downloadTrack(track) },
+        isDownloaded = isDownloaded,
+        isDownloading = isDownloading,
         onPlayQueueIndex = viewModel::playTrackAtIndex,
         onRemoveQueueItem = viewModel::removeQueueItem,
         onTrackClick = viewModel::playTrack,
@@ -143,6 +154,9 @@ fun NowPlayingScreen(
     onShuffleClick: () -> Unit,
     onRepeatClick: () -> Unit,
     onLikeClick: () -> Unit,
+    onDownloadClick: (Track) -> Unit = {},
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
     onPlayQueueIndex: (Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit = {},
     onTrackClick: (Track) -> Unit = {},
@@ -366,15 +380,46 @@ fun NowPlayingScreen(
                     label = "heartScale"
                 )
 
-                IconButton(onClick = onLikeClick) {
-                    Icon(
-                        imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Favorito",
-                        tint = if (isLiked) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .scale(heartScale)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Botón de Descarga MP3
+                    IconButton(
+                        onClick = { track?.let { onDownloadClick(it) } }
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = Color(0xFF1DB954),
+                                strokeWidth = 2.5.dp
+                            )
+                        } else if (isDownloaded) {
+                            Icon(
+                                imageVector = Icons.Default.FileDownloadDone,
+                                contentDescription = "Descargado en el dispositivo",
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(26.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Descargar canción en MP3",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    IconButton(onClick = onLikeClick) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Favorito",
+                            tint = if (isLiked) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .scale(heartScale)
+                        )
+                    }
                 }
             }
 

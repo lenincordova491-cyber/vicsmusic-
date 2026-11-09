@@ -1506,13 +1506,32 @@ private fun MediaCard(
             .width(136.dp)
             .clickable(onClick = onClick)
     ) {
-        Box {
+        Box(modifier = Modifier.size(136.dp)) {
             ArtworkImage(
                 artworkUrl = track.artworkUrl,
                 contentDescription = track.title,
                 size = 136.dp,
                 cornerRadius = 8.dp
             )
+
+            // Botón flotante para descargar en el dispositivo
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .clickable { onDownloadClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Descargar en el móvil",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(

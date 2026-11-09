@@ -1,7 +1,9 @@
 package app.vicsmusic.feature.home
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -52,9 +54,24 @@ private const val YTM_LOGIN_URL =
 private const val YTM_BASE_URL = "https://music.youtube.com"
 private const val YT_BASE_URL = "https://www.youtube.com"
 
-// Clean Chrome Android User-Agent (without "; wv") to prevent Google OAuth 403 disallowed_useragent
-private const val CHROME_MOBILE_UA =
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+// Resuelve el User-Agent legítimo del dispositivo evitando WebView headers que causan 403
+// y evitando modelos falsos como "Pixel 8" que provocan alertas de seguridad de Google.
+internal fun resolveLegitimateUserAgent(context: Context): String {
+    val defaultUa = runCatching { WebSettings.getDefaultUserAgent(context) }.getOrNull()
+    if (!defaultUa.isNullOrBlank()) {
+        val cleaned = defaultUa
+            .replace("; wv", "")
+            .replace(Regex("Version/\\d+(\\.\\d+)*\\s*"), "")
+        if (cleaned.contains("Chrome", ignoreCase = true)) {
+            return cleaned
+        }
+    }
+
+    val androidVersion = Build.VERSION.RELEASE.takeIf { !it.isNullOrBlank() } ?: "14"
+    val model = Build.MODEL.takeIf { !it.isNullOrBlank() } ?: "Android Device"
+    val buildId = Build.ID.takeIf { !it.isNullOrBlank() } ?: "UQ1A.240205.004"
+    return "Mozilla/5.0 (Linux; Android $androidVersion; $model Build/$buildId) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -218,7 +235,7 @@ fun YouTubeLoginDialog(
                                     setSupportZoom(true)
                                     builtInZoomControls = true
                                     displayZoomControls = false
-                                    userAgentString = CHROME_MOBILE_UA
+                                    userAgentString = resolveLegitimateUserAgent(ctx)
                                 }
 
                                 webChromeClient = object : WebChromeClient() {

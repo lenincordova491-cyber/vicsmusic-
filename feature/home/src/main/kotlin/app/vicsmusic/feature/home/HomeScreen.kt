@@ -136,6 +136,11 @@ fun HomeRoute(
             onDownloadTrack = viewModel::downloadTrack,
             onResetArtistPreferences = viewModel::resetArtistPreferences,
             onToggleAutoplay = viewModel::toggleAutoplay,
+            onOpenLogin = { viewModel.setLoginDialogOpen(true) },
+            onDismissLogin = { viewModel.setLoginDialogOpen(false) },
+            onLoginSuccess = viewModel::onYouTubeLoginSuccess,
+            onSyncYouTube = viewModel::syncYouTubeAccount,
+            onLogoutYouTube = viewModel::logoutYouTube,
             modifier = modifier
         )
     }
@@ -156,6 +161,11 @@ fun HomeScreen(
     onDownloadTrack: (Track) -> Unit,
     onResetArtistPreferences: () -> Unit = {},
     onToggleAutoplay: (Boolean) -> Unit = {},
+    onOpenLogin: () -> Unit = {},
+    onDismissLogin: () -> Unit = {},
+    onLoginSuccess: (String, String?) -> Unit = { _, _ -> },
+    onSyncYouTube: () -> Unit = {},
+    onLogoutYouTube: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     PullToRefreshBox(
@@ -207,19 +217,75 @@ fun HomeScreen(
                         )
                     }
 
-                    // Settings Gear Button (Tuerca de ajustes para configurar extensiones)
-                    IconButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SpotifyDarkCard)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Ajustes y Extensiones",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        Card(
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (uiState.isYtmLoggedIn) {
+                                    SpotifyGreen.copy(alpha = 0.2f)
+                                } else {
+                                    Color(0xFFE11D48).copy(alpha = 0.2f)
+                                }
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable {
+                                    if (uiState.isYtmLoggedIn) {
+                                        onSyncYouTube()
+                                    } else {
+                                        onOpenLogin()
+                                    }
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                if (uiState.isSyncingYtm) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = SpotifyGreen,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else if (uiState.isYtmLoggedIn) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = SpotifyGreen,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                Text(
+                                    text = when {
+                                        uiState.isSyncingYtm -> "Sincronizando..."
+                                        uiState.isYtmLoggedIn -> "YT Music activo"
+                                        else -> "Conectar YT Music"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (uiState.isYtmLoggedIn) SpotifyGreen else Color(0xFFFF4D6D)
+                                )
+                            }
+                        }
+
+                        // Settings Gear Button (Tuerca de ajustes para configurar extensiones)
+                        IconButton(
+                            onClick = onSettingsClick,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(SpotifyDarkCard)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Ajustes y Extensiones",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -601,10 +667,25 @@ fun HomeScreen(
                 extensions = uiState.availableExtensions,
                 activeIds = uiState.activeExtensionIds,
                 isAutoplayEnabled = uiState.isAutoplayEnabled,
+                isYtmLoggedIn = uiState.isYtmLoggedIn,
+                isSyncingYtm = uiState.isSyncingYtm,
                 onToggle = onToggleExtension,
                 onToggleAutoplay = onToggleAutoplay,
                 onResetArtistPreferences = onResetArtistPreferences,
+                onOpenLogin = {
+                    onDismissSettings()
+                    onOpenLogin()
+                },
+                onSyncYouTube = onSyncYouTube,
+                onLogoutYouTube = onLogoutYouTube,
                 onDismiss = onDismissSettings
+            )
+        }
+
+        if (uiState.isLoginDialogOpen) {
+            YouTubeLoginDialog(
+                onLoginSuccess = onLoginSuccess,
+                onDismiss = onDismissLogin
             )
         }
     }
@@ -1457,9 +1538,14 @@ private fun SettingsExtensionsDialog(
     extensions: List<ExtensionItem>,
     activeIds: Set<String>,
     isAutoplayEnabled: Boolean,
+    isYtmLoggedIn: Boolean = false,
+    isSyncingYtm: Boolean = false,
     onToggle: (String) -> Unit,
     onToggleAutoplay: (Boolean) -> Unit,
     onResetArtistPreferences: () -> Unit,
+    onOpenLogin: () -> Unit = {},
+    onSyncYouTube: () -> Unit = {},
+    onLogoutYouTube: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -1481,9 +1567,82 @@ private fun SettingsExtensionsDialog(
         },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().height(380.dp),
+                modifier = Modifier.fillMaxWidth().height(420.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isYtmLoggedIn) SpotifyGreen.copy(alpha = 0.18f)
+                                else Color(0xFFE11D48).copy(alpha = 0.18f)
+                            )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isYtmLoggedIn) Icons.Default.Check else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = if (isYtmLoggedIn) SpotifyGreen else Color(0xFFFF4D6D)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isYtmLoggedIn) "YouTube Music Conectado" else "Conectar cuenta de YouTube Music",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (isYtmLoggedIn) {
+                                        "Tus gustos, favoritos, historial y búsquedas están sincronizados"
+                                    } else {
+                                        "Inicia sesión con Google para extraer tus gustos, mixes y búsquedas personalizadas"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isYtmLoggedIn) {
+                                TextButton(onClick = onSyncYouTube, enabled = !isSyncingYtm) {
+                                    Text(
+                                        text = if (isSyncingYtm) "Sincronizando..." else "Sincronizar ahora",
+                                        color = SpotifyGreen,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(onClick = onLogoutYouTube) {
+                                    Text(
+                                        text = "Cerrar sesión",
+                                        color = Color(0xFFFF4D6D),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                TextButton(onClick = onOpenLogin) {
+                                    Text(
+                                        text = "Iniciar sesión con Google",
+                                        color = SpotifyGreen,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item {
                     Row(
                         modifier = Modifier

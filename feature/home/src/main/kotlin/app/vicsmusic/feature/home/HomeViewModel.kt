@@ -60,6 +60,9 @@ data class HomeUiState(
     val availableExtensions: List<ExtensionItem> = emptyList(),
     val activeExtensionIds: Set<String> = setOf("ytmusic-spotiflac", "spotify-web", "soundcloud"),
     val isSettingsOpen: Boolean = false,
+    val isLoginDialogOpen: Boolean = false,
+    val isYtmLoggedIn: Boolean = false,
+    val isSyncingYtm: Boolean = false,
     val isAutoplayEnabled: Boolean = true,
     val downloadingTrackId: String? = null,
     val errorMessage: String? = null
@@ -134,33 +137,45 @@ class HomeViewModel @Inject constructor(
                 // Home screen exclusively shows online streaming & downloaded tracks (no local device files)
                 val onlineTracks = allTracks.filter { it.sourceId != "local" && !it.artworkUrl.isNullOrBlank() }
                 val effectiveTracks = (onlineTracks + STARTER_TRACKS).distinctBy { it.id }
+                val likedTracks = onlineTracks.filter { it.isLiked }
                 val likedTrackIds = allTracks.filter { it.isLiked }.map { it.id }.toSet()
+                val syncedPersonalArtists = onlineTracks
+                    .filter { it.isLiked || it.playCount > 0 }
+                    .map { it.artistName.trim() }
+                    .filter { it.isNotBlank() && !it.equals("Artista desconocido", ignoreCase = true) }
+                    .toSet()
+                val effectiveFavoriteArtists = prefs.favoriteArtistIds + syncedPersonalArtists
 
                 val recommendations = recommendationEngine.computeRecommendations(
                     allAvailableTracks = effectiveTracks,
                     listeningHistory = history,
                     favoriteTrackIds = likedTrackIds,
-                    favoriteArtistNames = prefs.favoriteArtistIds
+                    favoriteArtistNames = effectiveFavoriteArtists
                 )
 
                 // 6 tracks for Spotify 2x3 quick access grid (online tracks with valid artwork)
                 val cleanRecents = recents.filter { it.sourceId != "local" && !it.artworkUrl.isNullOrBlank() }
-                val prioritized = if (prefs.favoriteArtistIds.isNotEmpty()) {
+                val prioritized = if (effectiveFavoriteArtists.isNotEmpty() || likedTrackIds.isNotEmpty()) {
                     effectiveTracks.sortedByDescending { track ->
-                        val isFav = prefs.favoriteArtistIds.any { fav ->
+                        var weight = 0f
+                        if (track.isLiked) weight += 150f
+                        if (track.playCount > 0) weight += 80f
+                        val isFav = effectiveFavoriteArtists.any { fav ->
                             track.artistId.equals(fav, ignoreCase = true) ||
                             track.artistName.equals(fav, ignoreCase = true) ||
                             fav.replace("_", " ").equals(track.artistName, ignoreCase = true)
                         }
-                        if (isFav) 100f else 0f
+                        if (isFav) weight += 100f
+                        weight
                     }
                 } else {
                     effectiveTracks
                 }
-                val quickAccess = (cleanRecents + prioritized).distinctBy { it.id }.take(6)
+                val quickAccess = (likedTracks.take(4) + cleanRecents + prioritized).distinctBy { it.id }.take(6)
 
                 // Hero featured banner (first recommendation or top track matching favorites)
-                val hero = recommendations.dailyMix.firstOrNull { !it.artworkUrl.isNullOrBlank() }
+                val hero = likedTracks.firstOrNull { !it.artworkUrl.isNullOrBlank() }
+                    ?: recommendations.dailyMix.firstOrNull { !it.artworkUrl.isNullOrBlank() }
                     ?: prioritized.firstOrNull { !it.artworkUrl.isNullOrBlank() }
                     ?: effectiveTracks.first()
 
@@ -221,21 +236,51 @@ class HomeViewModel @Inject constructor(
                     track.artistName.contains("Rubén Blades", ignoreCase = true)
                 } + SALSA_TRACKS).distinctBy { it.id }
 
+                val isYtmConnected = prefs.isYtmLoggedIn || musicRepository.hasYouTubeSession()
+                val dynamicUserArtists = onlineTracks
+                    .filter { it.isLiked || it.playCount > 0 }
+                    .groupBy { it.artistName.trim() }
+                    .filterKeys { name ->
+                        name.isNotBlank() &&
+                        !name.equals("Artista desconocido", ignoreCase = true) &&
+                        CURATED_ARTISTS.none { c -> c.name.equals(name, ignoreCase = true) }
+                    }
+                    .entries
+                    .sortedByDescending { (_, tracks) -> tracks.count { it.isLiked } * 3 + tracks.size }
+                    .take(8)
+                    .map { (artistName, artistTracks) ->
+                        Artist(
+                            id = artistTracks.first().artistId.ifBlank { artistName.lowercase().replace(" ", "_") },
+                            sourceId = "ytmusic",
+                            name = artistName,
+                            imageUrl = artistTracks.firstNotNullOfOrNull { it.artworkUrl },
+                            bio = "Sincronizado desde tus gustos de YouTube Music",
+                            topTracks = artistTracks.distinctBy { it.id }.take(15)
+                        )
+                    }
+
+                val mergedArtists = (dynamicUserArtists + if (effectiveFavoriteArtists.isNotEmpty()) {
+                    CURATED_ARTISTS.sortedByDescending { artist ->
+                        if (effectiveFavoriteArtists.any { it.equals(artist.id, true) || it.equals(artist.name, true) }) 1 else 0
+                    }
+                } else {
+                    CURATED_ARTISTS
+                }).distinctBy { it.name.lowercase() }
+
                 _uiState.value.copy(
                     isLoading = false,
-                    tasteSummaryLabel = recommendations.tasteProfile.tasteSummaryLabel,
+                    isYtmLoggedIn = isYtmConnected,
+                    tasteSummaryLabel = if (isYtmConnected) {
+                        "Sincronizado con YouTube Music • ${recommendations.tasteProfile.tasteSummaryLabel}"
+                    } else {
+                        recommendations.tasteProfile.tasteSummaryLabel
+                    },
                     quickAccessTracks = quickAccess,
                     featuredRelease = hero,
-                    favoriteArtists = if (prefs.favoriteArtistIds.isNotEmpty()) {
-                        CURATED_ARTISTS.sortedByDescending { artist ->
-                            if (prefs.favoriteArtistIds.any { it.equals(artist.id, true) || it.equals(artist.name, true) }) 1 else 0
-                        }
-                    } else {
-                        CURATED_ARTISTS
-                    },
+                    favoriteArtists = mergedArtists,
                     topCharts = TOP_CHARTS,
-                    dailyMix = (recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.drop(1)).distinctBy { it.id }.take(12),
-                    recommendedTracks = (recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.reversed()).distinctBy { it.id }.take(12),
+                    dailyMix = (likedTracks + recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.drop(1)).distinctBy { it.id }.take(14),
+                    recommendedTracks = (cleanRecents + recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.reversed()).distinctBy { it.id }.take(14),
                     trendingTracks = currentTrending,
                     cumbiaTracks = cumbia,
                     rockPopTracks = rockPop,
@@ -262,8 +307,11 @@ class HomeViewModel @Inject constructor(
 
     private fun fetchOnlineCatalog() {
         viewModelScope.launch {
-            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
             val prefs = userPreferencesRepository.userPreferences.first()
+            if (prefs.isYtmLoggedIn && !prefs.ytmCookieHeader.isNullOrBlank()) {
+                musicRepository.updateYouTubeSession(prefs.ytmCookieHeader, prefs.ytmVisitorData)
+            }
+            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
             if (prefs.favoriteArtistIds.isNotEmpty()) {
                 for (artist in prefs.favoriteArtistIds.take(3)) {
                     musicRepository.searchTracks(artist)
@@ -279,6 +327,48 @@ class HomeViewModel @Inject constructor(
                     it.copy(trendingTracks = (trending.filter { t -> t.sourceId != "local" } + STARTER_TRACKS).distinctBy { t -> t.id }.take(25))
                 }
             }
+        }
+    }
+
+    fun setLoginDialogOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isLoginDialogOpen = isOpen) }
+    }
+
+    fun onYouTubeLoginSuccess(cookieHeader: String, visitorData: String?) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoginDialogOpen = false,
+                    isYtmLoggedIn = true,
+                    isSyncingYtm = true
+                )
+            }
+            musicRepository.updateYouTubeSession(cookieHeader, visitorData)
+            userPreferencesRepository.setYtmSession(cookieHeader, visitorData)
+            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
+            _uiState.update { it.copy(isSyncingYtm = false) }
+        }
+    }
+
+    fun syncYouTubeAccount() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSyncingYtm = true) }
+            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
+            _uiState.update { it.copy(isSyncingYtm = false) }
+        }
+    }
+
+    fun logoutYouTube() {
+        viewModelScope.launch {
+            runCatching {
+                android.webkit.CookieManager.getInstance().apply {
+                    removeAllCookies(null)
+                    flush()
+                }
+            }
+            musicRepository.clearYouTubeSession()
+            userPreferencesRepository.clearYtmSession()
+            _uiState.update { it.copy(isYtmLoggedIn = false) }
         }
     }
 

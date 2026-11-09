@@ -16,4 +16,6 @@ interface UserPreferencesRepository {
     suspend fun setOnboardingCompleted(completed: Boolean)
     suspend fun setFavoriteArtists(artists: Set<String>)
     suspend fun setAutoplayEnabled(enabled: Boolean)
+    suspend fun setYtmSession(cookieHeader: String?, visitorData: String?)
+    suspend fun clearYtmSession()
 }

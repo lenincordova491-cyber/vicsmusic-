@@ -181,11 +181,18 @@ object InnerTubeParser {
 
     private fun parseTwoRowItem(item: JsonObject?): RemoteTrack? {
         if (item == null) return null
-        val nav = item.obj("navigationEndpoint", "watchEndpoint")
-        val videoId = nav.str("videoId") ?: return null
+        val videoId = item.str("navigationEndpoint", "watchEndpoint", "videoId")
+            ?: item.str(
+                "thumbnailOverlay", "musicItemThumbnailOverlayRenderer", "content",
+                "musicPlayButtonRenderer", "playNavigationEndpoint", "watchEndpoint", "videoId"
+            )
+            ?: return null
         val title = item.arr("title", "runs")?.firstOrNull().str("text") ?: return null
         val subtitleRuns = item.arr("subtitle", "runs").orEmpty()
-        val artistName = subtitleRuns.firstOrNull().str("text") ?: "Artista desconocido"
+        val nonSeparatorTexts = subtitleRuns
+            .mapNotNull { it.str("text")?.trim() }
+            .filter { it.isNotEmpty() && it != "•" && !it.equals("Canción", true) && !it.equals("Song", true) && !it.equals("Video", true) && !it.equals("Vídeo", true) }
+        val artistName = nonSeparatorTexts.firstOrNull() ?: "Artista desconocido"
         val thumb = item.arr("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails")
             ?.lastOrNull().str("url")?.let(::upscaleArtwork)
 

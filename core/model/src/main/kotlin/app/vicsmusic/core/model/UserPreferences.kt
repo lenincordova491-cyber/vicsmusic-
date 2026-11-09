@@ -42,5 +42,11 @@ data class UserPreferences(
     ),
     val isOnboardingCompleted: Boolean = false,
     val favoriteArtistIds: Set<String> = emptySet(),
-    val isAutoplayEnabled: Boolean = true
-)
+    val isAutoplayEnabled: Boolean = true,
+    val ytmCookieHeader: String? = null,
+    val ytmVisitorData: String? = null
+) {
+    val isYtmLoggedIn: Boolean
+        get() = !ytmCookieHeader.isNullOrBlank() &&
+            (ytmCookieHeader.contains("SAPISID=") || ytmCookieHeader.contains("__Secure-3PAPISID="))
+}

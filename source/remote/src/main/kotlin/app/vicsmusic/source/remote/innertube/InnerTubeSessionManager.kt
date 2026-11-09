@@ -28,9 +28,13 @@ class InnerTubeSessionManager @Inject constructor() {
     val session: StateFlow<InnerTubeSession> = _session.asStateFlow()
 
     fun updateSession(cookieHeader: String?, visitorData: String?, dataSyncId: String? = null) {
+        val cleanCookies = cookieHeader?.trim()?.takeIf { it.isNotEmpty() }
+        val resolvedVisitor = visitorData?.trim()?.takeIf { it.isNotEmpty() }
+            ?: cleanCookies?.let { extractCookie(it, "VISITOR_INFO1_LIVE") }
+            ?: _session.value.visitorData
         _session.value = InnerTubeSession(
-            cookieHeader = cookieHeader?.trim()?.takeIf { it.isNotEmpty() },
-            visitorData = visitorData?.trim()?.takeIf { it.isNotEmpty() },
+            cookieHeader = cleanCookies,
+            visitorData = resolvedVisitor,
             dataSyncId = dataSyncId?.trim()?.takeIf { it.isNotEmpty() }
         )
     }
@@ -51,14 +55,14 @@ class InnerTubeSessionManager @Inject constructor() {
      * Calcula el header Authorization: SAPISIDHASH <timestamp>_<sha1> requerido por
      * los endpoints autenticados de YouTube Music (FEmusic_home, FEmusic_history, FEmusic_liked_videos).
      */
-    fun buildAuthorizationHeader(): String? {
+    fun buildAuthorizationHeader(origin: String = YTM_ORIGIN): String? {
         val cookies = _session.value.cookieHeader ?: return null
         val sapisid = extractCookie(cookies, "SAPISID")
             ?: extractCookie(cookies, "__Secure-3PAPISID")
             ?: return null
 
         val timestampSec = System.currentTimeMillis() / 1000L
-        val payload = "$timestampSec $sapisid $YTM_ORIGIN"
+        val payload = "$timestampSec $sapisid $origin"
         val sha1 = MessageDigest.getInstance("SHA-1")
             .digest(payload.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }

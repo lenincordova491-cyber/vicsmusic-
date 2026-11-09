@@ -33,6 +33,8 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
         val IS_ONBOARDING_COMPLETED = androidx.datastore.preferences.core.booleanPreferencesKey("is_onboarding_completed")
         val FAVORITE_ARTISTS = stringSetPreferencesKey("favorite_artists")
         val IS_AUTOPLAY_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("is_autoplay_enabled")
+        val YTM_COOKIE_HEADER = stringPreferencesKey("ytm_cookie_header")
+        val YTM_VISITOR_DATA = stringPreferencesKey("ytm_visitor_data")
     }
 
     private val defaultSources = setOf(
@@ -84,6 +86,8 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
             val isOnboardingCompleted = preferences[PreferencesKeys.IS_ONBOARDING_COMPLETED] ?: false
             val favoriteArtists = preferences[PreferencesKeys.FAVORITE_ARTISTS] ?: emptySet()
             val isAutoplayEnabled = preferences[PreferencesKeys.IS_AUTOPLAY_ENABLED] ?: true
+            val ytmCookieHeader = preferences[PreferencesKeys.YTM_COOKIE_HEADER]
+            val ytmVisitorData = preferences[PreferencesKeys.YTM_VISITOR_DATA]
 
             UserPreferences(
                 themeMode = themeMode,
@@ -95,7 +99,9 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
                 activeSourceIds = activeSources,
                 isOnboardingCompleted = isOnboardingCompleted,
                 favoriteArtistIds = favoriteArtists,
-                isAutoplayEnabled = isAutoplayEnabled
+                isAutoplayEnabled = isAutoplayEnabled,
+                ytmCookieHeader = ytmCookieHeader,
+                ytmVisitorData = ytmVisitorData
             )
         }
 
@@ -151,6 +157,27 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
     suspend fun setFavoriteArtists(artists: Set<String>) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.FAVORITE_ARTISTS] = artists
+        }
+    }
+
+    suspend fun setYtmSession(cookieHeader: String?, visitorData: String?) {
+        dataStore.edit { preferences ->
+            if (!cookieHeader.isNullOrBlank()) {
+                preferences[PreferencesKeys.YTM_COOKIE_HEADER] = cookieHeader
+            } else {
+                preferences.remove(PreferencesKeys.YTM_COOKIE_HEADER)
+            }
+            if (!visitorData.isNullOrBlank()) {
+                preferences[PreferencesKeys.YTM_VISITOR_DATA] = visitorData
+            } else {
+                preferences.remove(PreferencesKeys.YTM_VISITOR_DATA)
+            }
+        }
+    }
+
+    suspend fun clearYtmSession() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.YTM_COOKIE_HEADER)
         }
     }
 }

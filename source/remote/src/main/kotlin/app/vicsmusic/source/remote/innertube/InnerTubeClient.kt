@@ -177,11 +177,12 @@ class InnerTubeClient(
                 val visitor = currentSession.visitorData ?: DEFAULT_VISITOR_ID
                 header(HEADER_VISITOR_ID, visitor)
 
-                if (currentSession.isLoggedIn) {
+                if (currentSession.isLoggedIn && profile.origin != null) {
                     currentSession.cookieHeader?.let { header(HttpHeaders.Cookie, it) }
-                    sessionManager.buildAuthorizationHeader()?.let {
+                    sessionManager.buildAuthorizationHeader(profile.origin)?.let {
                         header(HttpHeaders.Authorization, it)
                     }
+                    header("X-Goog-AuthUser", "0")
                 }
                 setBody(requestBody.toString())
             }

@@ -30,4 +30,7 @@ interface MusicRepository {
     suspend fun clearSearchHistory(): Result<Unit>
     suspend fun syncAuthenticatedHistoryAndLikes(): Result<Unit>
     suspend fun getContinuousRadioTracks(seedTrack: Track, excludedTrackIds: Set<String> = emptySet()): Result<List<Track>>
+    fun updateYouTubeSession(cookieHeader: String?, visitorData: String? = null) {}
+    fun clearYouTubeSession() {}
+    fun hasYouTubeSession(): Boolean = false
 }

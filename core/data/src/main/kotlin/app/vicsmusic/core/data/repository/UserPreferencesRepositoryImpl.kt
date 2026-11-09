@@ -51,4 +51,12 @@ class UserPreferencesRepositoryImpl @Inject constructor(
     override suspend fun setAutoplayEnabled(enabled: Boolean) {
         dataStore.setAutoplayEnabled(enabled)
     }
+
+    override suspend fun setYtmSession(cookieHeader: String?, visitorData: String?) {
+        dataStore.setYtmSession(cookieHeader, visitorData)
+    }
+
+    override suspend fun clearYtmSession() {
+        dataStore.clearYtmSession()
+    }
 }

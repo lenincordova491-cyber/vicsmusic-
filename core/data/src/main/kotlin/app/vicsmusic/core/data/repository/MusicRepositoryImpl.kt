@@ -229,13 +229,18 @@ class MusicRepositoryImpl @Inject constructor(
             }
 
             val lyricHints = lrclibCandidates.map { LyricMatchHint(it.trackName, it.artistName) }
-            val candidates = (directLocal + cachedLyricTracks + allRemote).distinctBy { it.id }
+            val candidates = (allRemote + directLocal + cachedLyricTracks).distinctBy { it.id }
+            val userPreferredArtists = allCatalogOnline
+                .filter { it.isLiked || it.playCount > 0 }
+                .map { it.artistName }
+                .toSet()
 
             advancedSearchEngine.rankSearchResults(
                 rawQuery = clean,
                 candidates = candidates,
                 lyricHints = lyricHints,
-                cachedLyricMatchTrackIds = cachedLyricMatchIds
+                cachedLyricMatchTrackIds = cachedLyricMatchIds,
+                preferredArtists = userPreferredArtists
             )
         }
     }
@@ -513,40 +518,71 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun updateYouTubeSession(cookieHeader: String?, visitorData: String?) {
+        innerTubeSessionManager.updateSession(cookieHeader, visitorData)
+    }
+
+    override fun clearYouTubeSession() {
+        innerTubeSessionManager.clearSession()
+    }
+
+    override fun hasYouTubeSession(): Boolean = innerTubeSessionManager.hasSession()
+
     override suspend fun syncAuthenticatedHistoryAndLikes(): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
             if (!innerTubeSessionManager.hasSession()) {
                 return@runCatching
             }
 
-            // 1. Sincronizar Historial de escucha autenticado de Google
-            val historyResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_HISTORY)
-            val historyTracks = InnerTubeParser.parseBrowseTracks(historyResponse)
-                .map { it.toDomainTrack() }
-
-            if (historyTracks.isNotEmpty()) {
-                val entities = historyTracks.map { it.asEntity() }
-                trackDao.upsertTracksPreservingHistory(entities)
-                historyTracks.forEach { track ->
-                    playHistoryDao.insertHistory(
-                        PlayHistoryEntity(
-                            trackId = track.id,
-                            playedAt = System.currentTimeMillis(),
-                            completionPercentage = 1.0f
-                        )
-                    )
+            // 1. Sincronizar Feed de Inicio personalizado (FEmusic_home: Quick Picks, Mixes y Recomendaciones)
+            runCatching {
+                val homeResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_HOME)
+                val homeTracks = InnerTubeParser.parseBrowseTracks(homeResponse)
+                    .map { it.toDomainTrack() }
+                if (homeTracks.isNotEmpty()) {
+                    trackDao.upsertTracksPreservingHistory(homeTracks.map { it.asEntity() })
                 }
             }
 
-            // 2. Sincronizar Canciones que me gustan (Liked Songs)
-            val likedResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_LIKED_SONGS)
-            val likedTracks = InnerTubeParser.parseBrowseTracks(likedResponse)
-                .map { it.toDomainTrack().copy(isLiked = true) }
+            // 2. Sincronizar Historial de escucha autenticado de Google (FEmusic_history)
+            runCatching {
+                val historyResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_HISTORY)
+                val historyTracks = InnerTubeParser.parseBrowseTracks(historyResponse)
+                    .map { it.toDomainTrack() }
 
-            if (likedTracks.isNotEmpty()) {
-                val likedEntities = likedTracks.map { it.asEntity() }
-                trackDao.upsertTracksPreservingHistory(likedEntities)
+                if (historyTracks.isNotEmpty()) {
+                    val now = System.currentTimeMillis()
+                    val entities = historyTracks.mapIndexed { index, track ->
+                        track.asEntity().copy(
+                            lastPlayedAt = now - (index * 1_000L),
+                            playCount = 1
+                        )
+                    }
+                    trackDao.upsertTracksPreservingHistory(entities)
+                    historyTracks.take(30).forEachIndexed { index, track ->
+                        playHistoryDao.insertHistory(
+                            PlayHistoryEntity(
+                                trackId = track.id,
+                                playedAt = now - (index * 1_000L),
+                                completionPercentage = 1.0f
+                            )
+                        )
+                    }
+                }
             }
+
+            // 3. Sincronizar Canciones que me gustan (FEmusic_liked_videos)
+            runCatching {
+                val likedResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_LIKED_SONGS)
+                val likedTracks = InnerTubeParser.parseBrowseTracks(likedResponse)
+                    .map { it.toDomainTrack().copy(isLiked = true) }
+
+                if (likedTracks.isNotEmpty()) {
+                    val likedEntities = likedTracks.map { it.asEntity().copy(isLiked = true) }
+                    trackDao.upsertTracksPreservingHistory(likedEntities)
+                }
+            }
+            Unit
         }
     }
 
@@ -555,9 +591,10 @@ class MusicRepositoryImpl @Inject constructor(
         excludedTrackIds: Set<String>
     ): Result<List<Track>> = withContext(ioDispatcher) {
         runCatching {
+            val rawVideoId = seedTrack.id.removePrefix(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)
             val response = innerTubeClient.nextQueue(
-                videoId = seedTrack.id,
-                playlistId = "RDAMVM${seedTrack.id}"
+                videoId = rawVideoId,
+                playlistId = "RDAMVM$rawVideoId"
             )
             val rawTracks = InnerTubeParser.parseNextQueueTracks(response)
                 .map { it.toDomainTrack() }

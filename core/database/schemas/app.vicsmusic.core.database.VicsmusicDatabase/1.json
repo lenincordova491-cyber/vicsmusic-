@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "53ee771f4242d90388e5b22610796468",
+    "identityHash": "46a2b48b4e473bcfaa45fc97a09fc1a9",
     "entities": [
       {
         "tableName": "tracks",
@@ -138,6 +138,17 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_tracks_lastPlayedAt` ON `${TABLE_NAME}` (`lastPlayedAt`)"
+          },
+          {
+            "name": "index_tracks_sourceId_isLiked_lastPlayedAt",
+            "unique": false,
+            "columnNames": [
+              "sourceId",
+              "isLiked",
+              "lastPlayedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tracks_sourceId_isLiked_lastPlayedAt` ON `${TABLE_NAME}` (`sourceId`, `isLiked`, `lastPlayedAt`)"
           }
         ],
         "foreignKeys": []
@@ -451,6 +462,16 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_play_history_playedAt` ON `${TABLE_NAME}` (`playedAt`)"
+          },
+          {
+            "name": "index_play_history_trackId_playedAt",
+            "unique": false,
+            "columnNames": [
+              "trackId",
+              "playedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_play_history_trackId_playedAt` ON `${TABLE_NAME}` (`trackId`, `playedAt`)"
           }
         ],
         "foreignKeys": []
@@ -654,7 +675,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '53ee771f4242d90388e5b22610796468')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '46a2b48b4e473bcfaa45fc97a09fc1a9')"
     ]
   }
 }

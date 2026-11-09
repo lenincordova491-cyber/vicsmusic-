@@ -51,7 +51,7 @@ object LrcParser {
                 return Lyrics(
                     trackId = trackId,
                     lines = lines,
-                    isSynced = true,
+                    isSynced = false,
                     source = source
                 )
             }

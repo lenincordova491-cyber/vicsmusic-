@@ -36,6 +36,8 @@ class MusicRepositoryImplTest {
     private val lrclibClient: app.vicsmusic.core.network.LrclibClient = mockk(relaxed = true)
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient = mockk(relaxed = true)
     private val declarativeExtensionManager: app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager = mockk(relaxed = true)
+    private val innerTubeSessionManager: app.vicsmusic.source.remote.innertube.InnerTubeSessionManager = mockk(relaxed = true)
+    private val innerTubeClient: app.vicsmusic.source.remote.innertube.InnerTubeClient = mockk(relaxed = true)
     private val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
     private val sourceRegistry: SourceRegistry = SourceRegistry()
     private val testDispatcher = StandardTestDispatcher()
@@ -53,6 +55,8 @@ class MusicRepositoryImplTest {
             lrclibClient = lrclibClient,
             extensionRegistryClient = extensionRegistryClient,
             declarativeExtensionManager = declarativeExtensionManager,
+            innerTubeSessionManager = innerTubeSessionManager,
+            innerTubeClient = innerTubeClient,
             context = context,
             ioDispatcher = testDispatcher
         )

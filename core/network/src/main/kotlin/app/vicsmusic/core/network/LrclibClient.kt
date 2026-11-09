@@ -144,7 +144,7 @@ class LrclibClient(
         if (isInstrumental) {
             return Lyrics(
                 trackId = trackId,
-                lines = listOf(app.vicsmusic.core.model.LyricLine(0L, "♪ Pista Instrumental ♪")),
+                lines = listOf(app.vicsmusic.core.model.LyricLine(0L, "♪ Instrumental ♪")),
                 isSynced = true,
                 source = "lrclib"
             )

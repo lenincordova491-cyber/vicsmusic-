@@ -1,6 +1,7 @@
 package app.vicsmusic.source.remote.innertube
 
 import app.vicsmusic.core.model.AudioQuality
+import app.vicsmusic.core.model.Track
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -16,7 +17,19 @@ data class RemoteTrack(
     val albumId: String?,
     val durationMs: Long,
     val thumbnailUrl: String?
-)
+) {
+    fun toDomainTrack(sourceId: String = "ytmusic"): Track = Track(
+        id = "yt_$videoId",
+        sourceId = sourceId,
+        title = title,
+        artistId = artistId ?: "yt_artist_unknown",
+        artistName = artistName.ifBlank { "Artista desconocido" },
+        albumId = albumId,
+        albumName = albumName,
+        durationMs = durationMs,
+        artworkUrl = thumbnailUrl
+    )
+}
 
 data class SearchPageResult(
     val tracks: List<RemoteTrack>,
@@ -110,6 +123,145 @@ object InnerTubeParser {
         }
 
         return SearchPageResult(tracks.distinctBy { it.videoId }, continuation)
+    }
+
+    // ---------------------------------------------------------------- browse
+
+    fun parseBrowseTracks(root: JsonObject): List<RemoteTrack> {
+        val tracks = mutableListOf<RemoteTrack>()
+
+        // 1. Continuation shelves
+        val continuationContents = root.obj("continuationContents")
+        if (continuationContents != null) {
+            val shelf = continuationContents.obj("musicShelfContinuation")
+                ?: continuationContents.obj("musicPlaylistShelfContinuation")
+            shelf?.arr("contents")?.forEach { item ->
+                parseListItem(item.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+            }
+            return tracks.distinctBy { it.videoId }
+        }
+
+        // 2. Tabbed or singleColumn sections
+        val tabs = root.obj("contents")?.obj("singleColumnBrowseResultsRenderer")?.arr("tabs")
+            ?: root.obj("contents")?.obj("tabbedSearchResultsRenderer")?.arr("tabs")
+            ?: root.obj("contents")?.obj("twoColumnBrowseResultsRenderer")?.obj("secondaryContents")?.arr("tabs")
+
+        val sections = tabs?.firstOrNull()?.arr("tabRenderer", "content", "sectionListRenderer", "contents")
+            ?: root.arr("contents", "sectionListRenderer", "contents")
+            ?: root.obj("contents")?.obj("musicPlaylistShelfRenderer")?.let { JsonArray(listOf(it)) }
+            ?: JsonArray(emptyList())
+
+        for (section in sections) {
+            val sObj = section as? JsonObject ?: continue
+            val shelf = sObj.obj("musicShelfRenderer")
+                ?: sObj.obj("musicPlaylistShelfRenderer")
+                ?: sObj.obj("musicCarouselShelfRenderer")
+
+            shelf?.arr("contents")?.forEach { item ->
+                val itmObj = item as? JsonObject
+                parseListItem(itmObj?.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+                parseTwoRowItem(itmObj?.obj("musicTwoRowItemRenderer"))?.let { tracks.add(it) }
+            }
+
+            sObj.obj("gridRenderer")?.arr("items")?.forEach { item ->
+                val itmObj = item as? JsonObject
+                parseTwoRowItem(itmObj?.obj("musicTwoRowItemRenderer"))?.let { tracks.add(it) }
+                parseListItem(itmObj?.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+            }
+
+            sObj.arr("contents")?.forEach { item ->
+                val itmObj = item as? JsonObject
+                parseListItem(itmObj?.obj("musicResponsiveListItemRenderer"))?.let { tracks.add(it) }
+                parseListItem(itmObj)?.let { tracks.add(it) }
+            }
+        }
+
+        return tracks.distinctBy { it.videoId }
+    }
+
+    private fun parseTwoRowItem(item: JsonObject?): RemoteTrack? {
+        if (item == null) return null
+        val nav = item.obj("navigationEndpoint", "watchEndpoint")
+        val videoId = nav.str("videoId") ?: return null
+        val title = item.arr("title", "runs")?.firstOrNull().str("text") ?: return null
+        val subtitleRuns = item.arr("subtitle", "runs").orEmpty()
+        val artistName = subtitleRuns.firstOrNull().str("text") ?: "Artista desconocido"
+        val thumb = item.arr("thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails")
+            ?.lastOrNull().str("url")?.let(::upscaleArtwork)
+
+        return RemoteTrack(
+            videoId = videoId,
+            title = title,
+            artistName = artistName,
+            artistId = null,
+            albumName = null,
+            albumId = null,
+            durationMs = 0L,
+            thumbnailUrl = thumb
+        )
+    }
+
+    // ---------------------------------------------------------------- next queue
+
+    fun parseNextQueueTracks(root: JsonObject): List<RemoteTrack> {
+        val tracks = mutableListOf<RemoteTrack>()
+        val queueContents = root.obj("contents")
+            ?.obj("singleColumnMusicWatchNextResultsRenderer")
+            ?.obj("tabbedRenderer")
+            ?.obj("watchNextTabbedResultsRenderer")
+            ?.arr("tabs")
+            ?.firstOrNull()
+            ?.obj("tabRenderer")
+            ?.obj("content")
+            ?.obj("musicQueueRenderer")
+            ?.obj("content")
+            ?.obj("playlistPanelRenderer")
+            ?.arr("contents")
+            ?: root.obj("continuationContents")
+                ?.obj("playlistPanelContinuation")
+                ?.arr("contents")
+            .orEmpty()
+
+        for (item in queueContents) {
+            val panel = item.obj("playlistPanelVideoRenderer") ?: continue
+            val videoId = panel.str("videoId") ?: continue
+            val title = panel.arr("title", "runs")?.firstOrNull().str("text") ?: continue
+            val bylineRuns = panel.arr("longBylineText", "runs")
+                ?: panel.arr("shortBylineText", "runs")
+                .orEmpty()
+
+            val artistNames = mutableListOf<String>()
+            var albumName: String? = null
+            for (run in bylineRuns) {
+                val t = run.str("text")?.trim().orEmpty()
+                if (t.isEmpty() || t == "•") continue
+                val nav = run.obj("navigationEndpoint", "browseEndpoint")
+                val pageType = nav.str("browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType")
+                if (pageType == "MUSIC_PAGE_TYPE_ALBUM") {
+                    albumName = t
+                } else if (pageType == "MUSIC_PAGE_TYPE_ARTIST" || artistNames.isEmpty()) {
+                    artistNames.add(t)
+                }
+            }
+
+            val lengthText = panel.arr("lengthText", "runs")?.firstOrNull().str("text")
+                ?: panel.str("lengthText", "simpleText")
+            val thumb = panel.arr("thumbnail", "thumbnails")?.lastOrNull().str("url")?.let(::upscaleArtwork)
+
+            tracks.add(
+                RemoteTrack(
+                    videoId = videoId,
+                    title = title,
+                    artistName = artistNames.joinToString(", ").ifBlank { "Artista desconocido" },
+                    artistId = null,
+                    albumName = albumName,
+                    albumId = null,
+                    durationMs = lengthText?.let(::parseDurationMs) ?: 0L,
+                    thumbnailUrl = thumb
+                )
+            )
+        }
+        return tracks.distinctBy { it.videoId }
     }
 
     internal fun parseListItem(item: JsonObject?): RemoteTrack? {

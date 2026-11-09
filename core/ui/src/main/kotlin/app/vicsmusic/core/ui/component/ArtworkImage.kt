@@ -40,9 +40,10 @@ fun ArtworkImage(
             tint = VicsPrimary.copy(alpha = 0.5f),
             modifier = Modifier.size(size * 0.45f)
         )
-        if (!artworkUrl.isNullOrBlank()) {
+        val optimizedUrl = ThumbnailUrlOptimizer.optimize(artworkUrl)
+        if (!optimizedUrl.isNullOrBlank()) {
             AsyncImage(
-                model = artworkUrl,
+                model = optimizedUrl,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

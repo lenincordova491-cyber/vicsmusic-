@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.Random
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -111,9 +112,19 @@ class PlayerManager @Inject constructor(
     }
 
     private fun createExoPlayer(): ExoPlayer {
-        val cacheDataSourceFactory = playerCacheManager.createCacheDataSourceFactory()
+        val resolvingDataSourceFactory = playerCacheManager.createResolvingDataSourceFactory(
+            musicRepository = musicRepository,
+            qualityProvider = {
+                val prefs = runCatching { runBlocking { userPreferencesRepository.userPreferences.first() } }.getOrNull()
+                if (prefs != null) {
+                    resolveNetworkQuality(prefs.wifiQuality, prefs.cellularQuality)
+                } else {
+                    AudioQuality.HIGH
+                }
+            }
+        )
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(cacheDataSourceFactory)
+            .setDataSourceFactory(resolvingDataSourceFactory)
 
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -159,6 +170,26 @@ class PlayerManager @Inject constructor(
             }
         }
 
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            recordCurrentTrackFeedback()
+            val currentIdx = exoPlayer.currentMediaItemIndex
+            val items = queueManager.state.value.items
+            if (currentIdx in items.indices) {
+                val currentTrack = items[currentIdx]
+                queueManager.skipToIndex(currentIdx)
+                _playbackState.value = _playbackState.value.copy(
+                    currentTrack = currentTrack,
+                    positionMs = 0L,
+                    durationMs = currentTrack.durationMs,
+                    status = if (exoPlayer.isPlaying) PlaybackStatus.PLAYING else PlaybackStatus.BUFFERING
+                )
+                val remaining = items.size - 1 - currentIdx
+                if (remaining <= 2) {
+                    triggerContinuousAutoplay(currentTrack)
+                }
+            }
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             updatePlaybackState()
             if (isPlaying) {
@@ -197,29 +228,6 @@ class PlayerManager @Inject constructor(
         }
     }
 
-    fun playTrack(track: Track) {
-        queueManager.addToQueue(track)
-        val index = queueManager.state.value.items.indexOfFirst { it.id == track.id }
-        if (index != -1) {
-            playTrackAtIndex(index)
-            triggerAutoplay(track, autoPlayNext = false)
-        }
-    }
-
-    fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
-        queueManager.setQueue(tracks, startIndex)
-        playTrackAtIndex(startIndex)
-        val current = queueManager.state.value.currentTrack
-        if (current != null && tracks.size < 20) {
-            triggerAutoplay(current, autoPlayNext = false)
-        }
-    }
-
-    fun playTrackAtIndex(index: Int) {
-        val track = queueManager.skipToIndex(index) ?: return
-        prepareAndPlay(track)
-    }
-
     private fun recordCurrentTrackFeedback() {
         val prevTrack = _playbackState.value.currentTrack ?: return
         val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -248,78 +256,116 @@ class PlayerManager @Inject constructor(
         }
     }
 
-    private fun prepareAndPlay(track: Track) {
+    fun buildMediaItem(track: Track): MediaItem {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artistName)
+            .setAlbumTitle(track.albumName)
+            .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
+            .setExtras(Bundle().apply { putString("track_id", track.id) })
+            .build()
+
+        return MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(Uri.parse("vicsmusic://track/${track.id}"))
+            .setCustomCacheKey(track.id)
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    fun playRankingOrList(tracks: List<Track>, startIndex: Int = 0, startPositionMs: Long = 0L) {
+        if (tracks.isEmpty()) return
         recordCurrentTrackFeedback()
         prepareJob?.cancel()
 
+        val safeIndex = startIndex.coerceIn(0, tracks.lastIndex)
+        queueManager.setQueue(tracks, safeIndex)
+
+        scope.launch(Dispatchers.IO) {
+            runCatching { musicRepository.seedCatalogTracks(tracks) }
+        }
+
+        val mediaItems = tracks.map { buildMediaItem(it) }
+        val player = exoPlayer
+        player.setMediaItems(mediaItems, safeIndex, startPositionMs)
+        player.prepare()
+        player.playWhenReady = true
+        player.play()
+
+        val currentTrack = tracks[safeIndex]
         _playbackState.value = _playbackState.value.copy(
             status = PlaybackStatus.BUFFERING,
-            currentTrack = track,
-            positionMs = 0L,
-            durationMs = track.durationMs,
+            currentTrack = currentTrack,
+            positionMs = startPositionMs,
+            durationMs = currentTrack.durationMs,
             errorMessage = null
         )
 
-        // Seamless queue lookahead: if fewer than 6 tracks remain ahead in queue, prefetch autoplay
-        val qState = queueManager.state.value
-        val remaining = qState.items.size - (qState.currentIndex + 1)
-        if (remaining < 6) {
-            triggerAutoplay(track, autoPlayNext = false)
-        }
-
-        prepareJob = scope.launch {
-            // Ensure track metadata is always saved in DB so history/favorites never lose title/artist
-            musicRepository.seedCatalogTracks(listOf(track))
-
-            val prefs = runCatching { userPreferencesRepository.userPreferences.first() }.getOrNull()
-            val targetQuality = if (prefs != null) {
-                resolveNetworkQuality(prefs.wifiQuality, prefs.cellularQuality)
+        scope.launch {
+            val prefs = userPreferencesRepository.userPreferences.firstOrNull()
+            val crossfadeSec = prefs?.crossfadeDurationSeconds ?: 0
+            if (crossfadeSec > 0) {
+                applyCrossfadeIn(crossfadeSec)
             } else {
-                AudioQuality.HIGH
+                player.volume = 1f
             }
+        }
+    }
 
-            val streamResult = musicRepository.getStreamInfo(track.id, targetQuality)
-            streamResult.onSuccess { streamInfo ->
-                if (!isActive) return@onSuccess
-                if (streamInfo.headers.isNotEmpty()) {
-                    playerCacheManager.updateRequestHeaders(streamInfo.headers)
-                }
+    fun appendTracksToExoPlayerQueue(newTracks: List<Track>) {
+        if (newTracks.isEmpty()) return
+        val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
+        val uniqueNewTracks = newTracks.filter { !currentQueueIds.contains(it.id) }
+        if (uniqueNewTracks.isEmpty()) return
 
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artistName)
-                    .setAlbumTitle(track.albumName)
-                    .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
-                    .setExtras(Bundle().apply { putString("track_id", track.id) })
-                    .build()
+        queueManager.appendAutoplayTracks(uniqueNewTracks)
+        val mediaItems = uniqueNewTracks.map { buildMediaItem(it) }
+        exoPlayer.addMediaItems(mediaItems)
+    }
 
-                val mediaItem = MediaItem.Builder()
-                    .setMediaId(track.id)
-                    .setUri(Uri.parse(streamInfo.url))
-                    .setCustomCacheKey(track.id)
-                    .setMediaMetadata(metadata)
-                    .build()
+    fun playTrack(track: Track) {
+        val existingIndex = queueManager.state.value.items.indexOfFirst { it.id == track.id }
+        if (existingIndex != -1 && exoPlayer.mediaItemCount == queueManager.state.value.items.size) {
+            playTrackAtIndex(existingIndex)
+        } else {
+            playRankingOrList(listOf(track), 0, 0L)
+            triggerContinuousAutoplay(track)
+        }
+    }
 
-                val player = exoPlayer
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.playWhenReady = true
-                player.play()
+    fun playQueue(tracks: List<Track>, startIndex: Int = 0) {
+        playRankingOrList(tracks, startIndex, 0L)
+        val current = if (startIndex in tracks.indices) tracks[startIndex] else tracks.firstOrNull()
+        if (current != null && tracks.size < 20) {
+            triggerContinuousAutoplay(current)
+        }
+    }
 
-                val crossfadeSec = prefs?.crossfadeDurationSeconds ?: 0
-                if (crossfadeSec > 0) {
-                    applyCrossfadeIn(crossfadeSec)
-                } else {
-                    player.volume = 1f
-                }
-            }.onFailure { error ->
-                if (!isActive) return@onFailure
-                android.util.Log.e("PlayerManager", "Stream extraction failed for ${track.id}: ${error.message}", error)
-                _playbackState.value = _playbackState.value.copy(
-                    status = PlaybackStatus.ERROR,
-                    errorMessage = "No se pudo reproducir '${track.title}'"
-                )
-            }
+    fun playTrackAtIndex(index: Int) {
+        val targetTrack = queueManager.skipToIndex(index) ?: return
+        val player = exoPlayer
+        if (player.mediaItemCount == queueManager.state.value.items.size && index in 0 until player.mediaItemCount) {
+            recordCurrentTrackFeedback()
+            player.seekToDefaultPosition(index)
+            player.playWhenReady = true
+            player.play()
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = targetTrack,
+                positionMs = 0L,
+                durationMs = targetTrack.durationMs,
+                status = PlaybackStatus.BUFFERING
+            )
+        } else {
+            playRankingOrList(queueManager.state.value.items, index, 0L)
+        }
+    }
+
+    private fun prepareAndPlay(track: Track) {
+        val idx = queueManager.state.value.items.indexOfFirst { it.id == track.id }
+        if (idx != -1) {
+            playTrackAtIndex(idx)
+        } else {
+            playRankingOrList(listOf(track), 0, 0L)
         }
     }
 
@@ -416,18 +462,55 @@ class PlayerManager @Inject constructor(
     private val recommendationEngine = app.vicsmusic.core.domain.engine.AdaptiveRecommendationEngine()
 
     fun playNext() {
-        val nextTrack = queueManager.skipToNext()
-        if (nextTrack != null) {
-            prepareAndPlay(nextTrack)
+        val player = exoPlayer
+        if (player.hasNextMediaItem()) {
+            recordCurrentTrackFeedback()
+            player.seekToNextMediaItem()
+            player.playWhenReady = true
+            player.play()
         } else {
-            val current = _playbackState.value.currentTrack
-            if (current != null && queueManager.state.value.repeatMode == RepeatMode.OFF) {
-                triggerAutoplay(current, autoPlayNext = true)
-            } else if (queueManager.state.value.repeatMode == RepeatMode.ALL) {
-                val loopTrack = queueManager.skipToIndex(0)
-                if (loopTrack != null) {
-                    prepareAndPlay(loopTrack)
+            val nextTrack = queueManager.skipToNext()
+            if (nextTrack != null) {
+                playRankingOrList(queueManager.state.value.items, queueManager.state.value.currentIndex, 0L)
+            } else {
+                val current = _playbackState.value.currentTrack
+                if (current != null && queueManager.state.value.repeatMode == RepeatMode.OFF) {
+                    triggerContinuousAutoplay(current)
+                } else if (queueManager.state.value.repeatMode == RepeatMode.ALL) {
+                    if (player.mediaItemCount > 0) {
+                        player.seekToDefaultPosition(0)
+                        player.playWhenReady = true
+                        player.play()
+                    }
                 }
+            }
+        }
+    }
+
+    fun triggerContinuousAutoplay(seedTrack: Track) {
+        if (isAutoplayFetching) return
+        isAutoplayFetching = true
+        scope.launch {
+            try {
+                val prefs = userPreferencesRepository.userPreferences.first()
+                if (!prefs.isAutoplayEnabled) {
+                    return@launch
+                }
+
+                val currentQueueIds = queueManager.state.value.items.map { it.id }.toSet()
+                val radioResult = musicRepository.getContinuousRadioTracks(seedTrack, currentQueueIds)
+                val radioTracks = radioResult.getOrNull().orEmpty()
+
+                if (radioTracks.isNotEmpty()) {
+                    appendTracksToExoPlayerQueue(radioTracks)
+                } else {
+                    triggerAutoplay(seedTrack, autoPlayNext = false)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PlayerManager", "Error en continuous radio autoplay: ${e.message}", e)
+                triggerAutoplay(seedTrack, autoPlayNext = false)
+            } finally {
+                isAutoplayFetching = false
             }
         }
     }
@@ -501,12 +584,9 @@ class PlayerManager @Inject constructor(
                 }
 
                 if (autoplayList.isNotEmpty()) {
-                    queueManager.appendAutoplayTracks(autoplayList)
+                    appendTracksToExoPlayerQueue(autoplayList)
                     if (autoPlayNext) {
-                        val nextTrack = queueManager.skipToNext()
-                        if (nextTrack != null) {
-                            prepareAndPlay(nextTrack)
-                        }
+                        playNext()
                     }
                 } else if (autoPlayNext) {
                     val loopTrack = queueManager.skipToIndex(0)
@@ -528,13 +608,21 @@ class PlayerManager @Inject constructor(
     }
 
     fun playPrevious() {
-        if (exoPlayer.currentPosition > 3000L) {
+        val player = exoPlayer
+        if (player.currentPosition > 3000L) {
             seekTo(0L)
             return
         }
-        val prevTrack = queueManager.skipToPrevious()
-        if (prevTrack != null) {
-            prepareAndPlay(prevTrack)
+        if (player.hasPreviousMediaItem()) {
+            recordCurrentTrackFeedback()
+            player.seekToPreviousMediaItem()
+            player.playWhenReady = true
+            player.play()
+        } else {
+            val prevTrack = queueManager.skipToPrevious()
+            if (prevTrack != null) {
+                playRankingOrList(queueManager.state.value.items, queueManager.state.value.currentIndex, 0L)
+            }
         }
     }
 

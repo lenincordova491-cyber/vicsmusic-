@@ -28,4 +28,6 @@ interface MusicRepository {
     suspend fun addSearchHistory(query: String): Result<Unit>
     suspend fun deleteSearchHistory(query: String): Result<Unit>
     suspend fun clearSearchHistory(): Result<Unit>
+    suspend fun syncAuthenticatedHistoryAndLikes(): Result<Unit>
+    suspend fun getContinuousRadioTracks(seedTrack: Track, excludedTrackIds: Set<String> = emptySet()): Result<List<Track>>
 }

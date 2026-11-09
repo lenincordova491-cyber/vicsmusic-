@@ -105,18 +105,6 @@ class YouTubeMusicSource(
     override suspend fun browseHome(): Result<List<HomeSection>> =
         Result.success(emptyList())
 
-    private fun RemoteTrack.toDomainTrack(): Track = Track(
-        id = "$TRACK_PREFIX$videoId",
-        sourceId = SOURCE_ID,
-        title = title,
-        artistId = artistId ?: "yt_artist_unknown",
-        artistName = artistName.ifBlank { "Unknown artist" },
-        albumId = albumId,
-        albumName = albumName,
-        durationMs = durationMs,
-        artworkUrl = thumbnailUrl
-    )
-
     companion object {
         const val SOURCE_ID = "ytmusic"
         const val TRACK_PREFIX = "yt_"

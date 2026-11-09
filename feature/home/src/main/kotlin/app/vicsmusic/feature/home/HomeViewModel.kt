@@ -262,6 +262,7 @@ class HomeViewModel @Inject constructor(
 
     private fun fetchOnlineCatalog() {
         viewModelScope.launch {
+            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
             val prefs = userPreferencesRepository.userPreferences.first()
             if (prefs.favoriteArtistIds.isNotEmpty()) {
                 for (artist in prefs.favoriteArtistIds.take(3)) {
@@ -284,6 +285,7 @@ class HomeViewModel @Inject constructor(
     fun refreshCatalog() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
+            runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
             val onlineQueries = listOf(
                 "Top 50 Peru",
                 "Virales Peru 2026",
@@ -348,15 +350,8 @@ class HomeViewModel @Inject constructor(
 
     fun playTrack(track: Track, fromQueue: List<Track> = emptyList()) {
         if (fromQueue.isNotEmpty()) {
-            val remoteQueue = fromQueue.filter { it.sourceId != "local" }
-            val fullQueue = if (remoteQueue.size < 20) {
-                val more = STARTER_TRACKS.filter { cat -> remoteQueue.none { it.id == cat.id } }
-                (remoteQueue + more).distinctBy { it.id }
-            } else {
-                remoteQueue
-            }
-            val index = fullQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playbackConnection.playQueue(fullQueue, index)
+            val index = fromQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            playbackConnection.playQueue(fromQueue, index)
         } else {
             playbackConnection.playTrack(track)
         }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import app.vicsmusic.core.database.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -14,6 +15,29 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE id IN (:ids)")
     fun getTracks(ids: List<String>): Flow<List<TrackEntity>>
+
+    @Query("SELECT * FROM tracks WHERE id IN (:ids)")
+    suspend fun getTracksSnapshot(ids: List<String>): List<TrackEntity>
+
+    @Transaction
+    suspend fun upsertTracksPreservingHistory(incoming: List<TrackEntity>) {
+        if (incoming.isEmpty()) return
+        val existingMap = getTracksSnapshot(incoming.map { it.id }).associateBy { it.id }
+        val merged = incoming.map { inc ->
+            val existing = existingMap[inc.id]
+            if (existing != null) {
+                inc.copy(
+                    isLiked = existing.isLiked,
+                    playCount = existing.playCount,
+                    lastPlayedAt = existing.lastPlayedAt,
+                    addedAt = existing.addedAt
+                )
+            } else {
+                inc
+            }
+        }
+        upsertTracks(merged)
+    }
 
     @Query("SELECT * FROM tracks WHERE isLiked = 1 ORDER BY addedAt DESC")
     fun getFavoriteTracks(): Flow<List<TrackEntity>>

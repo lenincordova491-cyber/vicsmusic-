@@ -6,6 +6,7 @@ import app.vicsmusic.source.api.SourceRegistry
 import app.vicsmusic.source.local.LocalMusicSource
 import app.vicsmusic.source.remote.YouTubeMusicSource
 import app.vicsmusic.source.remote.innertube.InnerTubeClient
+import app.vicsmusic.source.remote.innertube.InnerTubeSessionManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,8 +27,17 @@ object SourceModule {
 
     @Provides
     @Singleton
-    fun provideInnerTubeClient(httpClient: HttpClient): InnerTubeClient {
-        return InnerTubeClient(httpClient)
+    fun provideInnerTubeSessionManager(): InnerTubeSessionManager {
+        return InnerTubeSessionManager()
+    }
+
+    @Provides
+    @Singleton
+    fun provideInnerTubeClient(
+        httpClient: HttpClient,
+        sessionManager: InnerTubeSessionManager
+    ): InnerTubeClient {
+        return InnerTubeClient(httpClient, sessionManager)
     }
 
     @Provides

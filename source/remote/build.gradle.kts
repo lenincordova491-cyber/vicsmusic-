@@ -27,6 +27,7 @@ dependencies {
     implementation(project(":source:api"))
     implementation(project(":core:common"))
     api(project(":core:network"))
+    implementation(libs.hilt.android)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

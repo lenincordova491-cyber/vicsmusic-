@@ -11,7 +11,8 @@ import androidx.room.PrimaryKey
         Index("artistName"),
         Index("albumId"),
         Index("isLiked"),
-        Index("lastPlayedAt")
+        Index("lastPlayedAt"),
+        Index(value = ["sourceId", "isLiked", "lastPlayedAt"])
     ]
 )
 data class TrackEntity(

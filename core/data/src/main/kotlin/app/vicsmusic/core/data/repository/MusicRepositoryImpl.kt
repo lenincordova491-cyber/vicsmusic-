@@ -29,6 +29,9 @@ import app.vicsmusic.source.api.SourceCapability
 import app.vicsmusic.source.api.SourceRegistry
 import app.vicsmusic.source.local.LocalMusicSource
 import app.vicsmusic.source.remote.declarative.DeclarativeExtensionManager
+import app.vicsmusic.source.remote.innertube.InnerTubeClient
+import app.vicsmusic.source.remote.innertube.InnerTubeParser
+import app.vicsmusic.source.remote.innertube.InnerTubeSessionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -60,6 +63,8 @@ class MusicRepositoryImpl @Inject constructor(
     private val lrclibClient: LrclibClient,
     private val extensionRegistryClient: app.vicsmusic.core.network.ExtensionRegistryClient,
     private val declarativeExtensionManager: DeclarativeExtensionManager,
+    private val innerTubeSessionManager: InnerTubeSessionManager,
+    private val innerTubeClient: InnerTubeClient,
     @ApplicationContext private val context: Context,
     @app.vicsmusic.core.data.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MusicRepository {
@@ -505,6 +510,67 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun clearSearchHistory(): Result<Unit> = withContext(ioDispatcher) {
         runCatching {
             searchHistoryDao.clearSearchHistory()
+        }
+    }
+
+    override suspend fun syncAuthenticatedHistoryAndLikes(): Result<Unit> = withContext(ioDispatcher) {
+        runCatching {
+            if (!innerTubeSessionManager.hasSession()) {
+                return@runCatching
+            }
+
+            // 1. Sincronizar Historial de escucha autenticado de Google
+            val historyResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_HISTORY)
+            val historyTracks = InnerTubeParser.parseBrowseTracks(historyResponse)
+                .map { it.toDomainTrack() }
+
+            if (historyTracks.isNotEmpty()) {
+                val entities = historyTracks.map { it.asEntity() }
+                trackDao.upsertTracksPreservingHistory(entities)
+                historyTracks.forEach { track ->
+                    playHistoryDao.insertHistory(
+                        PlayHistoryEntity(
+                            trackId = track.id,
+                            playedAt = System.currentTimeMillis(),
+                            completionPercentage = 1.0f
+                        )
+                    )
+                }
+            }
+
+            // 2. Sincronizar Canciones que me gustan (Liked Songs)
+            val likedResponse = innerTubeClient.browse(InnerTubeClient.BROWSE_LIKED_SONGS)
+            val likedTracks = InnerTubeParser.parseBrowseTracks(likedResponse)
+                .map { it.toDomainTrack().copy(isLiked = true) }
+
+            if (likedTracks.isNotEmpty()) {
+                val likedEntities = likedTracks.map { it.asEntity() }
+                trackDao.upsertTracksPreservingHistory(likedEntities)
+            }
+        }
+    }
+
+    override suspend fun getContinuousRadioTracks(
+        seedTrack: Track,
+        excludedTrackIds: Set<String>
+    ): Result<List<Track>> = withContext(ioDispatcher) {
+        runCatching {
+            val response = innerTubeClient.nextQueue(
+                videoId = seedTrack.id,
+                playlistId = "RDAMVM${seedTrack.id}"
+            )
+            val rawTracks = InnerTubeParser.parseNextQueueTracks(response)
+                .map { it.toDomainTrack() }
+
+            val filtered = rawTracks
+                .filter { it.id != seedTrack.id && !excludedTrackIds.contains(it.id) }
+                .distinctBy { it.id }
+
+            if (filtered.isNotEmpty()) {
+                trackDao.upsertTracksPreservingHistory(filtered.map { it.asEntity() })
+            }
+
+            filtered
         }
     }
 

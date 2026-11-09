@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
     tableName = "play_history",
     indices = [
         Index("trackId"),
-        Index("playedAt")
+        Index("playedAt"),
+        Index(value = ["trackId", "playedAt"])
     ]
 )
 data class PlayHistoryEntity(

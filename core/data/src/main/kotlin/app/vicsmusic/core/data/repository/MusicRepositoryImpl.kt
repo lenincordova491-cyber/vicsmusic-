@@ -1,6 +1,16 @@
 package app.vicsmusic.core.data.repository
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import app.vicsmusic.core.database.dao.DownloadDao
 import app.vicsmusic.core.database.dao.LyricsDao
 import app.vicsmusic.core.database.dao.PlayHistoryDao
@@ -255,8 +265,8 @@ class MusicRepositoryImpl @Inject constructor(
                     if (localFile.exists()) {
                         return@runCatching StreamInfo(
                             trackId = trackId,
-                            url = localFile.toURI().toString(),
-                            mimeType = "audio/mp4",
+                            url = Uri.fromFile(localFile).toString(),
+                            mimeType = "audio/mpeg",
                             bitrateKbps = 320,
                             headers = emptyMap()
                         )
@@ -296,33 +306,125 @@ class MusicRepositoryImpl @Inject constructor(
         withContext(ioDispatcher) {
             runCatching {
                 val streamInfo = getStreamInfo(track.id, AudioQuality.HIGH).getOrThrow()
-                val ext = when {
-                    streamInfo.mimeType.contains("webm", ignoreCase = true) -> "webm"
-                    streamInfo.mimeType.contains("mp4", ignoreCase = true) ||
-                        streamInfo.mimeType.contains("m4a", ignoreCase = true) -> "m4a"
-                    else -> "mp3"
-                }
-                val downloadDir = File(context.filesDir, "downloads").apply { if (!exists()) mkdirs() }
-                val safeFileName = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".$ext"
-                val targetFile = File(downloadDir, safeFileName)
 
-                onProgress(0.1f)
-                VicsHttpClientFactory.create().use { client ->
-                    val response = client.get(streamInfo.url) {
-                        streamInfo.headers.forEach { (k, v) -> header(k, v) }
+                // Guardar en almacenamiento del dispositivo (carpeta Music/BigMusic)
+                val externalMusic = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                val bigMusicPublic = File(externalMusic, "BigMusic")
+                val downloadDir = if (bigMusicPublic.exists() || bigMusicPublic.mkdirs()) {
+                    bigMusicPublic
+                } else {
+                    File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir, "BigMusic").apply {
+                        if (!exists()) mkdirs()
                     }
-                    if (response.status != HttpStatusCode.OK && response.status != HttpStatusCode.PartialContent) {
-                        throw IllegalStateException("Failed to download stream, HTTP status ${response.status}")
-                    }
-                    val bytes = response.bodyAsBytes()
-                    targetFile.writeBytes(bytes)
                 }
+
+                val cleanArtist = track.artistName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "Desconocido" }
+                val cleanTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "Cancion" }
+                val targetFile = File(downloadDir, "$cleanArtist - $cleanTitle.mp3")
+
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val channelId = "big_music_downloads"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notificationManager != null) {
+                    val channel = NotificationChannel(
+                        channelId,
+                        "Descargas de Big Music",
+                        NotificationManager.IMPORTANCE_LOW
+                    ).apply {
+                        description = "Progreso de descarga de canciones en Big Music"
+                        setShowBadge(false)
+                    }
+                    notificationManager.createNotificationChannel(channel)
+                }
+
+                val notifId = (track.id.hashCode() and 0x7FFFFFFF)
+
+                fun notifyProgress(percent: Int) {
+                    if (notificationManager == null) return
+                    val notif = Notification.Builder(context, channelId)
+                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                        .setContentTitle("Descargando canción")
+                        .setContentText("${track.artistName} - ${track.title} ($percent%)")
+                        .setProgress(100, percent, false)
+                        .setOngoing(true)
+                        .setAutoCancel(false)
+                        .build()
+                    notificationManager.notify(notifId, notif)
+                }
+
+                fun notifyComplete() {
+                    if (notificationManager == null) return
+                    val notif = Notification.Builder(context, channelId)
+                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                        .setContentTitle("Descarga completada")
+                        .setContentText("${track.artistName} - ${track.title}")
+                        .setProgress(0, 0, false)
+                        .setOngoing(false)
+                        .setAutoCancel(true)
+                        .build()
+                    notificationManager.notify(notifId, notif)
+                }
+
+                val url = URL(streamInfo.url)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    streamInfo.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+                }
+
+                if (conn.responseCode !in 200..299) {
+                    notificationManager?.cancel(notifId)
+                    throw IllegalStateException("Fallo al descargar stream: HTTP ${conn.responseCode}")
+                }
+
+                val totalBytes = conn.contentLengthLong.takeIf { it > 0L }
+                    ?: (streamInfo.bitrateKbps * 1024L * (track.durationMs / 1000L) / 8L).coerceAtLeast(1L)
+                var downloadedBytes = 0L
+
+                notifyProgress(0)
+                onProgress(0.01f)
+
+                try {
+                    conn.inputStream.use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(32 * 1024)
+                            var read: Int
+                            var lastPercent = -1
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                downloadedBytes += read
+                                if (totalBytes > 0) {
+                                    val percent = ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 99)
+                                    if (percent != lastPercent && percent % 2 == 0) {
+                                        lastPercent = percent
+                                        onProgress(percent / 100f)
+                                        notifyProgress(percent)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    notificationManager?.cancel(notifId)
+                    if (targetFile.exists()) targetFile.delete()
+                    throw e
+                }
+
                 onProgress(1.0f)
+                notifyComplete()
+
+                // Notificar al sistema multimedia de Android para que aparezca en el reproductor nativo y galería
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(targetFile.absolutePath),
+                    arrayOf("audio/mpeg", "audio/*"),
+                    null
+                )
 
                 val downloadEntity = DownloadEntity(
                     trackId = track.id,
                     localPath = targetFile.absolutePath,
-                    format = ext,
+                    format = "mp3",
                     quality = AudioQuality.HIGH.name,
                     downloadedAt = System.currentTimeMillis(),
                     sizeBytes = targetFile.length(),
@@ -342,6 +444,7 @@ class MusicRepositoryImpl @Inject constructor(
                 val file = File(download.localPath)
                 if (file.exists()) {
                     file.delete()
+                    MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), null, null)
                 }
                 downloadDao.deleteDownload(trackId)
             }

@@ -65,6 +65,7 @@ data class HomeUiState(
     val isSyncingYtm: Boolean = false,
     val isAutoplayEnabled: Boolean = true,
     val downloadingTrackId: String? = null,
+    val downloadProgress: Float = 0f,
     val errorMessage: String? = null
 )
 
@@ -449,9 +450,11 @@ class HomeViewModel @Inject constructor(
 
     fun downloadTrack(track: Track) {
         viewModelScope.launch {
-            _uiState.update { it.copy(downloadingTrackId = track.id) }
-            musicRepository.downloadTrack(track)
-            _uiState.update { it.copy(downloadingTrackId = null) }
+            _uiState.update { it.copy(downloadingTrackId = track.id, downloadProgress = 0f) }
+            musicRepository.downloadTrack(track) { progress ->
+                _uiState.update { it.copy(downloadProgress = progress) }
+            }
+            _uiState.update { it.copy(downloadingTrackId = null, downloadProgress = 0f) }
         }
     }
 

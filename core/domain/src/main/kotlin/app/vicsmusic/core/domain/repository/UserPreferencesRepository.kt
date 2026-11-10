@@ -18,4 +18,9 @@ interface UserPreferencesRepository {
     suspend fun setAutoplayEnabled(enabled: Boolean)
     suspend fun setYtmSession(cookieHeader: String?, visitorData: String?)
     suspend fun clearYtmSession()
+    suspend fun setBackendConfig(enabled: Boolean, url: String)
+    suspend fun setBackendServerUrl(url: String)
+    suspend fun setBackendEnabled(enabled: Boolean)
+    suspend fun setUpdateJsonUrl(url: String)
+    suspend fun checkBackendHealth(url: String): Boolean
 }

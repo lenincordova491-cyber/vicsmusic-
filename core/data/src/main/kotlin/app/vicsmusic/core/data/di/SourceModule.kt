@@ -83,6 +83,18 @@ object SourceModule {
 
     @Provides
     @Singleton
+    fun provideInnerTubeBackendClient(httpClient: HttpClient): app.vicsmusic.core.network.InnerTubeBackendClient {
+        return app.vicsmusic.core.network.InnerTubeBackendClient(httpClient)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppUpdateManager(httpClient: HttpClient): app.vicsmusic.core.data.updater.AppUpdateManager {
+        return app.vicsmusic.core.data.updater.AppUpdateManager(httpClient)
+    }
+
+    @Provides
+    @Singleton
     fun provideLocalMusicSource(
         @ApplicationContext context: Context
     ): LocalMusicSource {

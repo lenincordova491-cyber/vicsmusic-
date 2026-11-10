@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +42,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -144,6 +147,12 @@ fun HomeRoute(
             onLoginSuccess = viewModel::onYouTubeLoginSuccess,
             onSyncYouTube = viewModel::syncYouTubeAccount,
             onLogoutYouTube = viewModel::logoutYouTube,
+            onCheckUpdates = { viewModel.checkForUpdates(manual = true) },
+            onDismissUpdate = viewModel::dismissUpdateDialog,
+            onInstallUpdate = viewModel::installUpdate,
+            onPingBackend = viewModel::pingBackend,
+            onSetBackendUrl = viewModel::setBackendServerUrl,
+            onToggleBackend = viewModel::setBackendEnabled,
             modifier = modifier
         )
     }
@@ -172,6 +181,12 @@ fun HomeScreen(
     onLoginSuccess: (String, String?) -> Unit = { _, _ -> },
     onSyncYouTube: () -> Unit = {},
     onLogoutYouTube: () -> Unit = {},
+    onCheckUpdates: () -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
+    onInstallUpdate: () -> Unit = {},
+    onPingBackend: () -> Unit = {},
+    onSetBackendUrl: (String) -> Unit = {},
+    onToggleBackend: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     PullToRefreshBox(
@@ -777,7 +792,9 @@ fun HomeScreen(
                             coverUrl = tracksToShow.firstNotNullOfOrNull { it.artworkUrl }
                         )
                     )
-                }
+                },
+                onCheckUpdates = onCheckUpdates,
+                onPingBackend = onPingBackend
             )
         }
 
@@ -789,6 +806,10 @@ fun HomeScreen(
                 isAutoplayEnabled = uiState.isAutoplayEnabled,
                 isYtmLoggedIn = uiState.isYtmLoggedIn,
                 isSyncingYtm = uiState.isSyncingYtm,
+                backendServerUrl = uiState.backendServerUrl,
+                isBackendEnabled = uiState.isBackendEnabled,
+                isBackendConnected = uiState.isBackendConnected,
+                backendLatencyMs = uiState.backendLatencyMs,
                 onToggle = onToggleExtension,
                 onToggleAutoplay = onToggleAutoplay,
                 onResetArtistPreferences = onResetArtistPreferences,
@@ -798,6 +819,10 @@ fun HomeScreen(
                 },
                 onSyncYouTube = onSyncYouTube,
                 onLogoutYouTube = onLogoutYouTube,
+                onToggleBackend = onToggleBackend,
+                onSetBackendUrl = onSetBackendUrl,
+                onPingBackend = onPingBackend,
+                onCheckUpdates = onCheckUpdates,
                 onDismiss = onDismissSettings
             )
         }
@@ -806,6 +831,17 @@ fun HomeScreen(
             YouTubeLoginDialog(
                 onLoginSuccess = onLoginSuccess,
                 onDismiss = onDismissLogin
+            )
+        }
+
+        if (uiState.isUpdateDialogOpen && uiState.updateInfo != null) {
+            UpdateNoticeDialog(
+                updateInfo = uiState.updateInfo!!,
+                isDownloading = uiState.isDownloadingUpdate,
+                progress = uiState.updateProgress,
+                statusMessage = uiState.updateStatusMessage,
+                onInstall = onInstallUpdate,
+                onDismiss = onDismissUpdate
             )
         }
     }
@@ -1807,12 +1843,20 @@ private fun SettingsExtensionsDialog(
     isAutoplayEnabled: Boolean,
     isYtmLoggedIn: Boolean = false,
     isSyncingYtm: Boolean = false,
+    backendServerUrl: String = "http://192.168.1.4:8000",
+    isBackendEnabled: Boolean = true,
+    isBackendConnected: Boolean = false,
+    backendLatencyMs: Long? = null,
     onToggle: (String) -> Unit,
     onToggleAutoplay: (Boolean) -> Unit,
     onResetArtistPreferences: () -> Unit,
     onOpenLogin: () -> Unit = {},
     onSyncYouTube: () -> Unit = {},
     onLogoutYouTube: () -> Unit = {},
+    onToggleBackend: (Boolean) -> Unit = {},
+    onSetBackendUrl: (String) -> Unit = {},
+    onPingBackend: () -> Unit = {},
+    onCheckUpdates: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -2011,6 +2055,95 @@ private fun SettingsExtensionsDialog(
                         }
                     }
                 }
+
+                // Servidor de Streaming InnerTube-API
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SpotifyDarkCard)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isBackendConnected) SpotifyGreen else Color.Gray)
+                                )
+                                Text(
+                                    text = "InnerTube-API Backend",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Switch(
+                                checked = isBackendEnabled,
+                                onCheckedChange = onToggleBackend,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = SpotifyGreen,
+                                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    uncheckedTrackColor = SpotifyCardHover
+                                )
+                            )
+                        }
+                        Text(
+                            text = if (isBackendConnected) "🟢 Conectado: ${backendLatencyMs ?: 16} ms ($backendServerUrl)" else "⚪ Desconectado / Modo nativo de respaldo ($backendServerUrl)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isBackendConnected) SpotifyGreen else Color.Gray
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onPingBackend) {
+                                Text(text = "Probar conexión", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Actualizaciones de la App (OTA)
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SpotifyDarkCard)
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Actualizaciones OTA (.json)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Comprobar nueva versión de BigMusic",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = {
+                            onDismiss()
+                            onCheckUpdates()
+                        }) {
+                            Text(text = "Buscar", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2034,7 +2167,9 @@ private fun UserProfileDialog(
     onClearCache: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLikesPlaylist: () -> Unit,
-    onOpenHistoryPlaylist: () -> Unit
+    onOpenHistoryPlaylist: () -> Unit,
+    onCheckUpdates: () -> Unit = {},
+    onPingBackend: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2282,6 +2417,103 @@ private fun UserProfileDialog(
                     }
                 }
 
+                // Servidor de Streaming InnerTube-API
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (uiState.isBackendConnected) SpotifyGreen else Color.Gray)
+                                )
+                                Text(
+                                    text = "InnerTube-API Backend",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Text(
+                                text = if (uiState.isBackendConnected) "${uiState.backendLatencyMs ?: 15} ms" else "Modo nativo",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (uiState.isBackendConnected) SpotifyGreen else Color.LightGray
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${uiState.backendServerUrl} • Búsquedas y catálogo optimizados.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onPingBackend) {
+                                Text(text = "Probar conexión", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Versión de la Aplicación y Actualizaciones OTA
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "VicsMusic v1.0.0 (Build 1)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = uiState.updateStatusMessage ?: "Actualizador In-App OTA integrado (.json)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (uiState.updateInfo != null) SpotifyGreen else Color.Gray
+                                )
+                            }
+                            if (uiState.isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = SpotifyGreen
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onCheckUpdates) {
+                                Text(
+                                    text = if (uiState.updateInfo != null) "Ver actualización disponible" else "Buscar actualizaciones",
+                                    color = SpotifyGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Conexión YouTube Music y Ajustes
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2325,6 +2557,116 @@ private fun UserProfileDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(text = "Cerrar", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = Color(0xFF1E1E1E),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
+}
+
+@Composable
+private fun UpdateNoticeDialog(
+    updateInfo: app.vicsmusic.core.model.AppUpdateInfo,
+    isDownloading: Boolean,
+    progress: Float,
+    statusMessage: String?,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isDownloading) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Verified,
+                    contentDescription = null,
+                    tint = SpotifyGreen,
+                    modifier = Modifier.size(28.dp)
+                )
+                Column {
+                    Text(
+                        text = "Actualización disponible",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Versión ${updateInfo.versionName} (Build ${updateInfo.versionCode})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SpotifyGreen
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Novedades y mejoras:",
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White
+                )
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141414)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = updateInfo.changelog,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.LightGray,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                if (isDownloading) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = SpotifyGreen,
+                            trackColor = Color(0xFF333333)
+                        )
+                        Text(
+                            text = "${(progress * 100).toInt()}% descargado...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SpotifyGreen
+                        )
+                    }
+                }
+                if (!statusMessage.isNullOrBlank()) {
+                    Text(
+                        text = statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF38BDF8)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onInstall,
+                enabled = !isDownloading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SpotifyGreen,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    text = if (isDownloading) "Descargando..." else "Actualizar ahora",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            if (!updateInfo.forceUpdate && !isDownloading) {
+                TextButton(onClick = onDismiss) {
+                    Text(text = "Más tarde", color = Color.Gray)
+                }
             }
         },
         containerColor = Color(0xFF1E1E1E),

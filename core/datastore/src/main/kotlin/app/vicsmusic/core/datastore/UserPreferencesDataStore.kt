@@ -35,6 +35,9 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
         val IS_AUTOPLAY_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("is_autoplay_enabled")
         val YTM_COOKIE_HEADER = stringPreferencesKey("ytm_cookie_header")
         val YTM_VISITOR_DATA = stringPreferencesKey("ytm_visitor_data")
+        val BACKEND_SERVER_URL = stringPreferencesKey("backend_server_url")
+        val IS_BACKEND_ENABLED = androidx.datastore.preferences.core.booleanPreferencesKey("is_backend_enabled")
+        val UPDATE_JSON_URL = stringPreferencesKey("update_json_url")
     }
 
     private val defaultSources = setOf(
@@ -88,6 +91,9 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
             val isAutoplayEnabled = preferences[PreferencesKeys.IS_AUTOPLAY_ENABLED] ?: true
             val ytmCookieHeader = preferences[PreferencesKeys.YTM_COOKIE_HEADER]
             val ytmVisitorData = preferences[PreferencesKeys.YTM_VISITOR_DATA]
+            val backendServerUrl = preferences[PreferencesKeys.BACKEND_SERVER_URL] ?: "http://192.168.1.4:8000"
+            val isBackendEnabled = preferences[PreferencesKeys.IS_BACKEND_ENABLED] ?: true
+            val updateJsonUrl = preferences[PreferencesKeys.UPDATE_JSON_URL] ?: "http://192.168.1.4:8080/update.json"
 
             UserPreferences(
                 themeMode = themeMode,
@@ -101,7 +107,12 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
                 favoriteArtistIds = favoriteArtists,
                 isAutoplayEnabled = isAutoplayEnabled,
                 ytmCookieHeader = ytmCookieHeader,
-                ytmVisitorData = ytmVisitorData
+                ytmVisitorData = ytmVisitorData,
+                backendServerUrl = backendServerUrl,
+                isBackendEnabled = isBackendEnabled,
+                updateJsonUrl = updateJsonUrl,
+                backendEnabled = isBackendEnabled,
+                backendUrl = backendServerUrl
             )
         }
 
@@ -178,6 +189,31 @@ class UserPreferencesDataStore(private val dataStore: DataStore<Preferences>) {
     suspend fun clearYtmSession() {
         dataStore.edit { preferences ->
             preferences.remove(PreferencesKeys.YTM_COOKIE_HEADER)
+        }
+    }
+
+    suspend fun setBackendServerUrl(url: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.BACKEND_SERVER_URL] = url
+        }
+    }
+
+    suspend fun setBackendEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_BACKEND_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setBackendConfig(enabled: Boolean, url: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.IS_BACKEND_ENABLED] = enabled
+            preferences[PreferencesKeys.BACKEND_SERVER_URL] = url
+        }
+    }
+
+    suspend fun setUpdateJsonUrl(url: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.UPDATE_JSON_URL] = url
         }
     }
 }

@@ -11,7 +11,8 @@ import javax.inject.Singleton
 
 @Singleton
 class UserPreferencesRepositoryImpl @Inject constructor(
-    private val dataStore: UserPreferencesDataStore
+    private val dataStore: UserPreferencesDataStore,
+    private val innerTubeBackendClient: app.vicsmusic.core.network.InnerTubeBackendClient = app.vicsmusic.core.network.InnerTubeBackendClient()
 ) : UserPreferencesRepository {
 
     override val userPreferences: Flow<UserPreferences> = dataStore.userPreferences
@@ -58,5 +59,25 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun clearYtmSession() {
         dataStore.clearYtmSession()
+    }
+
+    override suspend fun setBackendConfig(enabled: Boolean, url: String) {
+        dataStore.setBackendConfig(enabled, url)
+    }
+
+    override suspend fun setBackendServerUrl(url: String) {
+        dataStore.setBackendServerUrl(url)
+    }
+
+    override suspend fun setBackendEnabled(enabled: Boolean) {
+        dataStore.setBackendEnabled(enabled)
+    }
+
+    override suspend fun setUpdateJsonUrl(url: String) {
+        dataStore.setUpdateJsonUrl(url)
+    }
+
+    override suspend fun checkBackendHealth(url: String): Boolean {
+        return innerTubeBackendClient.checkHealth(url)
     }
 }

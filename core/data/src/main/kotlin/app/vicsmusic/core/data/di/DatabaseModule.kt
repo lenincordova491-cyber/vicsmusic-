@@ -46,7 +46,6 @@ object DatabaseModule {
             "vicsmusic.db"
         )
             .addMigrations(MIGRATION_1_2)
-            .fallbackToDestructiveMigration()
             .build()
     }
 

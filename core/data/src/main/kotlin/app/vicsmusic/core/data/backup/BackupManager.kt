@@ -9,6 +9,7 @@ import app.vicsmusic.core.database.entity.PlaylistTrackEntity
 import app.vicsmusic.core.database.entity.SearchHistoryEntity
 import app.vicsmusic.core.database.model.asEntity
 import app.vicsmusic.core.database.model.asExternalModel
+import app.vicsmusic.core.domain.repository.UserPreferencesRepository
 import app.vicsmusic.core.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
@@ -22,8 +23,10 @@ import javax.inject.Singleton
 
 @Serializable
 data class VicsMusicBackup(
-    val formatVersion: Int = 1,
+    val formatVersion: Int = 2,
     val exportedAt: Long = System.currentTimeMillis(),
+    val backendEnabled: Boolean = false,
+    val backendUrl: String = "",
     val tracks: List<Track> = emptyList(),
     val playlists: List<BackupPlaylist> = emptyList(),
     val playlistItems: List<BackupPlaylistItem> = emptyList(),
@@ -65,7 +68,8 @@ class BackupManager @Inject constructor(
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
     private val playHistoryDao: PlayHistoryDao,
-    private val searchHistoryDao: SearchHistoryDao
+    private val searchHistoryDao: SearchHistoryDao,
+    private val userPreferencesRepository: UserPreferencesRepository
 ) {
     private val json = Json {
         prettyPrint = true
@@ -79,6 +83,9 @@ class BackupManager @Inject constructor(
             val playlists = playlistDao.getAllPlaylists().firstOrNull().orEmpty()
             val favorites = trackDao.getFavoriteTracks().firstOrNull().orEmpty().map { it.id }
             val searchHistory = searchHistoryDao.getRecentSearches(100).firstOrNull().orEmpty().map { it.query }
+            val prefs = userPreferencesRepository.userPreferences.firstOrNull()
+            val backendEnabled = prefs?.backendEnabled ?: false
+            val backendUrl = prefs?.backendUrl ?: ""
 
             val backupPlaylists = playlists.map {
                 BackupPlaylist(
@@ -109,8 +116,10 @@ class BackupManager @Inject constructor(
             }
 
             val backup = VicsMusicBackup(
-                formatVersion = 1,
+                formatVersion = 2,
                 exportedAt = System.currentTimeMillis(),
+                backendEnabled = backendEnabled,
+                backendUrl = backendUrl,
                 tracks = allTracks,
                 playlists = backupPlaylists,
                 playlistItems = allPlaylistItems,
@@ -175,6 +184,11 @@ class BackupManager @Inject constructor(
             // 4. Restaurar historial de búsqueda
             for (query in backup.searchHistory) {
                 searchHistoryDao.insertSearch(SearchHistoryEntity(query, System.currentTimeMillis()))
+            }
+
+            // 5. Restaurar configuración del backend si está presente en el backup
+            if (backup.backendUrl.isNotBlank() || backup.backendEnabled) {
+                userPreferencesRepository.setBackendConfig(backup.backendEnabled, backup.backendUrl)
             }
 
             BackupRestoreStats(

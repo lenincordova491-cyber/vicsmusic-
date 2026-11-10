@@ -44,7 +44,12 @@ data class UserPreferences(
     val favoriteArtistIds: Set<String> = emptySet(),
     val isAutoplayEnabled: Boolean = true,
     val ytmCookieHeader: String? = null,
-    val ytmVisitorData: String? = null
+    val ytmVisitorData: String? = null,
+    val backendServerUrl: String = "http://192.168.1.4:8000",
+    val isBackendEnabled: Boolean = true,
+    val updateJsonUrl: String = "http://192.168.1.4:8080/update.json",
+    val backendEnabled: Boolean = isBackendEnabled,
+    val backendUrl: String = backendServerUrl
 ) {
     val isYtmLoggedIn: Boolean
         get() = !ytmCookieHeader.isNullOrBlank() && (

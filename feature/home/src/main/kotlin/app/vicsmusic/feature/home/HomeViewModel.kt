@@ -70,7 +70,17 @@ data class HomeUiState(
     val isAutoplayEnabled: Boolean = true,
     val downloadingTrackId: String? = null,
     val downloadProgress: Float = 0f,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val updateInfo: app.vicsmusic.core.model.AppUpdateInfo? = null,
+    val isCheckingUpdate: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateProgress: Float = 0f,
+    val isUpdateDialogOpen: Boolean = false,
+    val backendServerUrl: String = "http://192.168.1.4:8000",
+    val isBackendEnabled: Boolean = true,
+    val isBackendConnected: Boolean = false,
+    val backendLatencyMs: Long? = null,
+    val updateStatusMessage: String? = null
 )
 
 @HiltViewModel
@@ -78,6 +88,7 @@ class HomeViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val playbackConnection: PlaybackConnection,
+    private val appUpdateRepository: app.vicsmusic.core.domain.repository.AppUpdateRepository? = null,
     private val recommendationEngine: AdaptiveRecommendationEngine = AdaptiveRecommendationEngine()
 ) : ViewModel() {
 
@@ -105,6 +116,8 @@ class HomeViewModel @Inject constructor(
         seedStarterTracks()
         observeData()
         fetchOnlineCatalog()
+        pingBackend()
+        checkForUpdates(manual = false)
     }
 
     private fun seedStarterTracks() {
@@ -334,7 +347,9 @@ class HomeViewModel @Inject constructor(
                     salsaTracks = salsa,
                     downloadedTracks = downloaded,
                     activeExtensionIds = activeSources,
-                    isAutoplayEnabled = prefs.isAutoplayEnabled
+                    isAutoplayEnabled = prefs.isAutoplayEnabled,
+                    backendServerUrl = prefs.backendServerUrl,
+                    isBackendEnabled = prefs.isBackendEnabled
                 )
             }
             .flowOn(Dispatchers.Default)
@@ -545,6 +560,99 @@ class HomeViewModel @Inject constructor(
     fun deleteDownloadedTrack(trackId: String) {
         viewModelScope.launch {
             musicRepository.deleteDownloadedTrack(trackId)
+        }
+    }
+
+    fun pingBackend() {
+        viewModelScope.launch {
+            val prefs = userPreferencesRepository.userPreferences.first()
+            val url = prefs.backendServerUrl
+            val start = System.currentTimeMillis()
+            val isOk = userPreferencesRepository.checkBackendHealth(url)
+            val latency = System.currentTimeMillis() - start
+            _uiState.update {
+                it.copy(
+                    isBackendConnected = isOk,
+                    backendLatencyMs = if (isOk) latency else null
+                )
+            }
+        }
+    }
+
+    fun setBackendServerUrl(url: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.setBackendServerUrl(url)
+            pingBackend()
+        }
+    }
+
+    fun setBackendEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setBackendEnabled(enabled)
+            if (enabled) {
+                pingBackend()
+            } else {
+                _uiState.update { it.copy(isBackendConnected = false, backendLatencyMs = null) }
+            }
+        }
+    }
+
+    fun checkForUpdates(manual: Boolean = false) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isCheckingUpdate = true,
+                    updateStatusMessage = if (manual) "Comprobando nuevas versiones..." else null
+                )
+            }
+            val prefs = userPreferencesRepository.userPreferences.first()
+            val manifestUrl = prefs.updateJsonUrl
+            val currentVersionCode = 1 // VicsMusic v1.0.0
+            val result = appUpdateRepository?.checkForUpdate(manifestUrl, currentVersionCode)?.getOrNull()
+            if (result != null) {
+                _uiState.update {
+                    it.copy(
+                        isCheckingUpdate = false,
+                        updateInfo = result,
+                        isUpdateDialogOpen = true,
+                        updateStatusMessage = "¡Nueva versión disponible: v${result.versionName}!"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isCheckingUpdate = false,
+                        updateStatusMessage = if (manual) "Tu aplicación ya está en la última versión." else null
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _uiState.update { it.copy(isUpdateDialogOpen = false) }
+    }
+
+    fun installUpdate() {
+        val info = _uiState.value.updateInfo ?: return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateProgress = 0f,
+                    updateStatusMessage = "Descargando actualización..."
+                )
+            }
+            val downloadResult = appUpdateRepository?.downloadApk(info) { progress ->
+                _uiState.update { it.copy(updateProgress = progress) }
+            }
+            _uiState.update { it.copy(isDownloadingUpdate = false) }
+            downloadResult?.onSuccess { apkFile ->
+                _uiState.update { it.copy(isUpdateDialogOpen = false, updateStatusMessage = "Instalador iniciado") }
+                appUpdateRepository?.launchInstaller(apkFile)
+            }?.onFailure { error ->
+                _uiState.update { it.copy(updateStatusMessage = "Error al descargar: ${error.message}") }
+            }
         }
     }
 

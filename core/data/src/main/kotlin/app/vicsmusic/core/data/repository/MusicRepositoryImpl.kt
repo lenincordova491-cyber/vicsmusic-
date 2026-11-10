@@ -34,6 +34,7 @@ import app.vicsmusic.core.model.StreamInfo
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.network.LrcParser
 import app.vicsmusic.core.network.LrclibClient
+import app.vicsmusic.core.network.LrclibSongCandidate
 import app.vicsmusic.core.network.VicsHttpClientFactory
 import app.vicsmusic.source.api.SearchType
 import app.vicsmusic.source.api.SourceCapability
@@ -63,6 +64,13 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private data class SearchSignalBundle(
+    val backendDirect: List<Track>,
+    val remoteDirect: List<Track>,
+    val lrclibCandidates: List<LrclibSongCandidate>,
+    val remoteLyricSearch: List<Track>
+)
+
 @Singleton
 class MusicRepositoryImpl @Inject constructor(
     private val trackDao: TrackDao,
@@ -84,6 +92,8 @@ class MusicRepositoryImpl @Inject constructor(
             httpClient = app.vicsmusic.core.network.VicsHttpClientFactory.create(),
             sessionManager = innerTubeSessionManager
         ),
+    private val innerTubeBackendClient: app.vicsmusic.core.network.InnerTubeBackendClient = app.vicsmusic.core.network.InnerTubeBackendClient(),
+    private val userPreferencesDataStore: app.vicsmusic.core.datastore.UserPreferencesDataStore? = null,
     @ApplicationContext private val context: Context,
     @app.vicsmusic.core.data.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MusicRepository {
@@ -193,7 +203,20 @@ class MusicRepositoryImpl @Inject constructor(
                     source.id in setOf("ytmusic", "jiosaavn", "piped-music", "soundcloud", "podcasts-apple")
             }
 
-            val (remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
+            val (backendDirect, remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
+                val backendDeferred = async {
+                    withTimeoutOrNull(2_500L) {
+                        val prefs = userPreferencesDataStore?.userPreferences?.firstOrNull()
+                        val isEnabled = prefs?.isBackendEnabled ?: true
+                        val url = prefs?.backendServerUrl ?: "http://192.168.1.4:8000"
+                        if (isEnabled) {
+                            innerTubeBackendClient.search(clean, url, limit = 20).getOrNull().orEmpty()
+                        } else {
+                            emptyList()
+                        }
+                    }.orEmpty()
+                }
+
                 val directDeferred = async {
                     searchableSources.map { source ->
                         async {
@@ -225,7 +248,12 @@ class MusicRepositoryImpl @Inject constructor(
                     }
                 }
 
-                Triple(directDeferred.await(), lrclibDeferred.await(), ytLyricDeferred.await())
+                SearchSignalBundle(
+                    backendDirect = backendDeferred.await(),
+                    remoteDirect = directDeferred.await(),
+                    lrclibCandidates = lrclibDeferred.await(),
+                    remoteLyricSearch = ytLyricDeferred.await()
+                )
             }
 
             // 4. Si LRCLIB identificó canciones exactas por un fragmento de letra que no están en los resultados directos,
@@ -234,7 +262,7 @@ class MusicRepositoryImpl @Inject constructor(
             if (ytSource != null && lrclibCandidates.isNotEmpty()) {
                 val topHintsToResolve = lrclibCandidates.take(2).filter { candidate ->
                     val normCandTitle = advancedSearchEngine.normalize(candidate.trackName)
-                    remoteDirect.none { advancedSearchEngine.normalize(it.title).contains(normCandTitle) }
+                    (remoteDirect + backendDirect).none { advancedSearchEngine.normalize(it.title).contains(normCandTitle) }
                 }
                 coroutineScope {
                     val jobs = topHintsToResolve.map { cand ->
@@ -249,7 +277,7 @@ class MusicRepositoryImpl @Inject constructor(
                 }
             }
 
-            val allRemote = (remoteDirect + remoteLyricSearch + resolvedLyricTracks).distinctBy { it.id }
+            val allRemote = (backendDirect + remoteDirect + remoteLyricSearch + resolvedLyricTracks).distinctBy { it.id }
             if (allRemote.isNotEmpty()) {
                 upsertTracksPreservingUserState(allRemote)
             }

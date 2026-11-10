@@ -19,7 +19,17 @@ class AppUpdateRepositoryImpl @Inject constructor(
         manifestUrl: String,
         currentVersionCode: Int
     ): Result<AppUpdateInfo?> {
-        return appUpdateManager.checkForUpdate(manifestUrl, currentVersionCode)
+        val installedCode = runCatching {
+            val packageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(packageInfo).toInt()
+        }.getOrDefault(currentVersionCode)
+
+        return appUpdateManager.checkForUpdate(manifestUrl, installedCode)
     }
 
     override suspend fun downloadApk(

@@ -597,6 +597,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private var dismissedVersionCode: Int = -1
+
     fun checkForUpdates(manual: Boolean = false) {
         viewModelScope.launch {
             _uiState.update {
@@ -607,14 +609,14 @@ class HomeViewModel @Inject constructor(
             }
             val prefs = userPreferencesRepository.userPreferences.first()
             val manifestUrl = prefs.updateJsonUrl
-            val currentVersionCode = 1 // VicsMusic v1.0.0
-            val result = appUpdateRepository?.checkForUpdate(manifestUrl, currentVersionCode)?.getOrNull()
+            val result = appUpdateRepository?.checkForUpdate(manifestUrl, 1)?.getOrNull()
             if (result != null) {
+                val shouldShow = manual || result.forceUpdate || (result.versionCode != dismissedVersionCode)
                 _uiState.update {
                     it.copy(
                         isCheckingUpdate = false,
                         updateInfo = result,
-                        isUpdateDialogOpen = true,
+                        isUpdateDialogOpen = shouldShow,
                         updateStatusMessage = "¡Nueva versión disponible: v${result.versionName}!"
                     )
                 }
@@ -622,6 +624,8 @@ class HomeViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isCheckingUpdate = false,
+                        updateInfo = null,
+                        isUpdateDialogOpen = false,
                         updateStatusMessage = if (manual) "Tu aplicación ya está en la última versión." else null
                     )
                 }
@@ -630,6 +634,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun dismissUpdateDialog() {
+        val currentCode = _uiState.value.updateInfo?.versionCode ?: -1
+        dismissedVersionCode = currentCode
         _uiState.update { it.copy(isUpdateDialogOpen = false) }
     }
 

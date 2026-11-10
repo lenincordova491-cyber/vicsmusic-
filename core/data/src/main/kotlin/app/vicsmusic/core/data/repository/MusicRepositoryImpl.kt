@@ -164,24 +164,25 @@ class MusicRepositoryImpl @Inject constructor(
             // 1. Guardar historial
             runCatching { searchHistoryDao.insertSearch(SearchHistoryEntity(clean, System.currentTimeMillis())) }
 
-            // 2. Buscar en catálogo local y letras cacheadas en Room
+            // 2. Buscar en catálogo local y letras cacheadas en Room (excluyendo previews de 30s obsoletos)
+            val deprecatedPreviewSources = setOf("itunes-preview", "deezer-preview", "openverse-audio", "ccmixter", "internet-archive")
             val directLocal = trackDao.searchTracks(clean).firstOrNull()?.map { it.asExternalModel() }.orEmpty()
-                .filter { it.sourceId != "local" }
+                .filter { it.sourceId != "local" && it.sourceId !in deprecatedPreviewSources }
             val allCatalogOnline = trackDao.getAllTracks().firstOrNull()?.map { it.asExternalModel() }.orEmpty()
-                .filter { it.sourceId != "local" }
+                .filter { it.sourceId != "local" && it.sourceId !in deprecatedPreviewSources }
             val cachedLyricMatchIds = runCatching {
                 lyricsDao.searchCachedLyrics(clean).map { it.trackId }.toSet()
             }.getOrDefault(emptySet())
             val cachedLyricTracks = allCatalogOnline.filter { cachedLyricMatchIds.contains(it.id) }
 
-            // 3. Búsqueda paralela multi-señal con filtro de capacidades y timeout individual (FIX BUG-04)
+            // 3. Búsqueda paralela multi-señal únicamente en fuentes de pistas completas (sin previews de 30s)
             val isLyricLike = advancedSearchEngine.isLikelyLyricQuery(clean)
             val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID)
             val searchableSources = sourceRegistry.getAllSources().filter { source ->
                 source !is LocalMusicSource &&
                     SourceCapability.SEARCH in source.capabilities &&
                     SourceCapability.STREAM in source.capabilities &&
-                    source.id in setOf("ytmusic", "itunes-preview", "deezer-preview")
+                    source.id in setOf("ytmusic", "soundcloud")
             }
 
             val (remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
@@ -407,7 +408,8 @@ class MusicRepositoryImpl @Inject constructor(
                 // Remote streaming from registered source or external charts
                 val cachedTrack = trackDao.getTrack(trackId).firstOrNull()
                 val sourceId = cachedTrack?.sourceId ?: resolveSourceId(trackId)
-                val source = sourceRegistry.getSource(sourceId)
+                val deprecatedPreviewSources = setOf("itunes-preview", "deezer-preview", "openverse-audio", "ccmixter", "internet-archive")
+                val source = if (sourceId in deprecatedPreviewSources) null else sourceRegistry.getSource(sourceId)
 
                 if (source != null) {
                     val primaryResult = source.getStream(trackId, quality)
@@ -722,6 +724,16 @@ class MusicRepositoryImpl @Inject constructor(
             )
             for (oldId in obsoleteIds) {
                 trackDao.deleteTrack(oldId)
+            }
+            val previewSourcesToPurge = listOf(
+                "itunes-preview",
+                "deezer-preview",
+                "openverse-audio",
+                "ccmixter",
+                "internet-archive"
+            )
+            for (badSource in previewSourcesToPurge) {
+                trackDao.deleteTracksBySource(badSource)
             }
             val existingTracks = trackDao.getAllTracks().firstOrNull().orEmpty().associateBy { it.id }
             val entitiesToUpsert = tracks.map { track ->

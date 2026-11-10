@@ -1,0 +1,57 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "soundcloud",
+  "name": "SoundCloud",
+  "version": "1.0.14",
+  "lang": [
+    "multi",
+    "es"
+  ],
+  "status": "verificado",
+  "legal": {
+    "license": "Streaming de pistas completas en SoundCloud API v2",
+    "notice": "Reproducción de pistas completas y remixes en alta resolución con carátulas 500x500.",
+    "docs": "https://github.com/mornyeapp/Mornye-Extension"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://api-v2.soundcloud.com",
+    "userAgent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+    "timeoutMs": 12000,
+    "maxBytes": 4194304
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/search/tracks",
+      "query": {
+        "q": "{{query}}",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}"
+      },
+      "response": {
+        "itemsPath": "$.collection",
+        "map": {
+          "id": "$.id",
+          "title": "$.title",
+          "artist": "$.user.username",
+          "durationMs": "$.full_duration",
+          "artworkUrl": "$.artwork_url",
+          "streamUrl": "$.uri"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "ytmusic-spotiflac",
+  "name": "YouTube Music (SpotiFLAC)",
+  "version": "2.4.6",
+  "lang": [
+    "multi",
+    "es"
+  ],
+  "status": "verificado",
+  "legal": {
+    "license": "Streaming de audio completo (Opus 160 kbps / AAC 256 kbps)",
+    "notice": "Búsqueda y reproducción de canciones completas en YouTube Music sin anuncios ni recortes de 30 segundos.",
+    "docs": "https://github.com/Amonoman/YT-Music-SpotiFLAC"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://music.youtube.com/youtubei/v1",
+    "userAgent": "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14; es_PE)",
+    "timeoutMs": 12000,
+    "maxBytes": 4194304
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "POST",
+      "path": "/search",
+      "query": {
+        "prettyPrint": "false"
+      },
+      "response": {
+        "itemsPath": "$.contents",
+        "map": {
+          "id": "$.videoId",
+          "title": "$.title",
+          "artist": "$.artist",
+          "album": "$.album",
+          "durationMs": "$.durationMs",
+          "artworkUrl": "$.thumbnailUrl"
+        }
+      }
+    }
+  }
+}

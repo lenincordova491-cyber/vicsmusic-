@@ -2,10 +2,28 @@
   "schema": "vicsmusic-extension-index/1",
   "extensions": [
     {
+      "id": "ytmusic-spotiflac",
+      "name": "YouTube Music (SpotiFLAC)",
+      "file": "ytmusic-spotiflac.json",
+      "status": "verificado",
+      "types": [
+        "music"
+      ]
+    },
+    {
+      "id": "soundcloud",
+      "name": "SoundCloud",
+      "file": "soundcloud.json",
+      "status": "verificado",
+      "types": [
+        "music"
+      ]
+    },
+    {
       "id": "jamendo",
       "name": "Jamendo",
       "file": "jamendo.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "music"
       ]
@@ -20,28 +38,10 @@
       ]
     },
     {
-      "id": "internet-archive",
-      "name": "Internet Archive (Audio)",
-      "file": "internet-archive.json",
-      "status": "verificar-endpoints",
-      "types": [
-        "music"
-      ]
-    },
-    {
-      "id": "openverse-audio",
-      "name": "Openverse (Audio)",
-      "file": "openverse-audio.json",
-      "status": "verificar-endpoints",
-      "types": [
-        "music"
-      ]
-    },
-    {
       "id": "radio-browser",
       "name": "Radio Browser (radios del mundo)",
       "file": "radio-browser.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "radio"
       ]
@@ -50,43 +50,16 @@
       "id": "somafm",
       "name": "SomaFM",
       "file": "somafm.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "radio"
-      ]
-    },
-    {
-      "id": "itunes-preview",
-      "name": "iTunes Search (previews 30 s)",
-      "file": "itunes-preview.json",
-      "status": "verificar-endpoints",
-      "types": [
-        "music"
-      ]
-    },
-    {
-      "id": "deezer-preview",
-      "name": "Deezer (previews 30 s)",
-      "file": "deezer-preview.json",
-      "status": "verificar-endpoints",
-      "types": [
-        "music"
-      ]
-    },
-    {
-      "id": "ccmixter",
-      "name": "ccMixter",
-      "file": "ccmixter.json",
-      "status": "sin-verificar",
-      "types": [
-        "music"
       ]
     },
     {
       "id": "subsonic",
       "name": "Subsonic / Navidrome / Jellyfin (self-hosted)",
       "file": "subsonic.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "music"
       ]
@@ -95,16 +68,16 @@
       "id": "lrclib",
       "name": "LRCLIB (letras sincronizadas)",
       "file": "lrclib.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "lyrics"
       ]
     },
     {
       "id": "musicbrainz",
-      "name": "MusicBrainz (metadatos)",
+      "name": "MusicBrainz + Cover Art Archive",
       "file": "musicbrainz.json",
-      "status": "verificar-endpoints",
+      "status": "verificado",
       "types": [
         "metadata"
       ]

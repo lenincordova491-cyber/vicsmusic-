@@ -14,11 +14,13 @@ import app.vicsmusic.source.remote.innertube.InnerTubeClient
 import app.vicsmusic.source.remote.innertube.InnerTubeClients
 import app.vicsmusic.source.remote.innertube.InnerTubeException
 import app.vicsmusic.source.remote.innertube.InnerTubeParser
+import app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio
 import app.vicsmusic.source.remote.innertube.RemoteTrack
 import io.ktor.http.HttpHeaders
 
 class YouTubeMusicSource(
-    private val client: InnerTubeClient
+    private val client: InnerTubeClient,
+    private val smartSearch: InnerTubeSmartSearchAndRadio? = null
 ) : MusicSource {
 
     override val id: String = SOURCE_ID
@@ -102,8 +104,20 @@ class YouTubeMusicSource(
     override suspend fun getArtist(id: String): Result<Artist> =
         Result.failure(UnsupportedOperationException("Artist browse not implemented in stub"))
 
-    override suspend fun browseHome(): Result<List<HomeSection>> =
-        Result.success(emptyList())
+    override suspend fun browseHome(): Result<List<HomeSection>> = runCatching {
+        val tracks = smartSearch?.browsePersonalizedHome()?.getOrNull().orEmpty()
+        if (tracks.isNotEmpty()) {
+            listOf(
+                HomeSection(
+                    id = "ytm_home_mix",
+                    title = "Selecciones para ti",
+                    tracks = tracks
+                )
+            )
+        } else {
+            emptyList()
+        }
+    }
 
     companion object {
         const val SOURCE_ID = "ytmusic"

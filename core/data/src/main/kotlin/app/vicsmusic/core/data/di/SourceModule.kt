@@ -42,8 +42,25 @@ object SourceModule {
 
     @Provides
     @Singleton
-    fun provideYouTubeMusicSource(innerTubeClient: InnerTubeClient): YouTubeMusicSource {
-        return YouTubeMusicSource(innerTubeClient)
+    fun provideInnerTubeSmartSearchAndRadio(
+        innerTubeClient: InnerTubeClient,
+        httpClient: HttpClient,
+        sessionManager: InnerTubeSessionManager
+    ): app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio {
+        return app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio(
+            innerTubeClient = innerTubeClient,
+            httpClient = httpClient,
+            sessionManager = sessionManager
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideYouTubeMusicSource(
+        innerTubeClient: InnerTubeClient,
+        smartSearch: app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio
+    ): YouTubeMusicSource {
+        return YouTubeMusicSource(innerTubeClient, smartSearch)
     }
 
     @Provides

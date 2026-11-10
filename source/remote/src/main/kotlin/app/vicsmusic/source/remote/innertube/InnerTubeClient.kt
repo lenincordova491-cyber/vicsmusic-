@@ -99,7 +99,10 @@ class InnerTubeClient(
         }
     }
 
-    suspend fun player(videoId: String, profile: InnerTubeClientProfile): JsonObject = executePost(
+    suspend fun player(
+        videoId: String,
+        profile: InnerTubeClientProfile = InnerTubeClients.ANDROID_VR
+    ): JsonObject = executePost(
         endpoint = "player",
         profile = profile
     ) {

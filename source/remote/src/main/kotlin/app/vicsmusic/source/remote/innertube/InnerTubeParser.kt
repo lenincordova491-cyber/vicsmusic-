@@ -368,6 +368,37 @@ object InnerTubeParser {
         )
     }
 
+    /**
+     * Extracts a lightweight H.264 MP4 video stream URL (360p/480p, itag 18/134/135)
+     * suitable for a muted vertical 9:16 Spotify Canvas loop.
+     * Returns null if the video is a static Topic art track.
+     */
+    fun parseCanvasVideoUrl(root: JsonObject): String? {
+        val details = root.obj("videoDetails")
+        val author = details.str("author").orEmpty()
+        val musicVideoType = details.str("musicVideoType").orEmpty()
+        // Skip static album art tracks ("- Topic" or ATV) so we only render real motion video
+        if (author.endsWith(" - Topic") || musicVideoType == "MUSIC_VIDEO_TYPE_ATV") {
+            return null
+        }
+
+        val streamingData = root.obj("streamingData") ?: return null
+        // Prefer progressive 360p MP4 (itag 18) for immediate playback without SABR/PoToken issues
+        val progressiveUrl = streamingData.arr("formats").orEmpty()
+            .firstOrNull { (it.long("itag")?.toInt() == 18) && !it.str("url").isNullOrBlank() }
+            ?.str("url")
+        if (!progressiveUrl.isNullOrBlank()) return progressiveUrl
+
+        // Fallback to adaptive H.264 360p/480p video-only MP4 (itag 134, 135, 133)
+        return streamingData.arr("adaptiveFormats").orEmpty()
+            .firstOrNull {
+                val itag = it.long("itag")?.toInt()
+                val mime = it.str("mimeType").orEmpty()
+                itag in listOf(134, 135, 133) && mime.startsWith("video/mp4") && !it.str("url").isNullOrBlank()
+            }
+            ?.str("url")
+    }
+
     private fun parseAudioFormat(element: JsonElement): AudioFormat? {
         val rawMime = element.str("mimeType") ?: return null
         if (!rawMime.startsWith("audio/")) return null

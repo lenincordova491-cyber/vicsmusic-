@@ -28,6 +28,7 @@ interface MusicRepository {
     suspend fun toggleTrackLike(track: Track): Result<Boolean>
     suspend fun syncLocalTracks(): Result<Int>
     suspend fun getLyrics(track: Track): Result<Lyrics?>
+    suspend fun getCanvasVideoUrl(track: Track): Result<String?> = Result.success(null)
     suspend fun downloadTrack(track: Track, onProgress: (Float) -> Unit = {}): Result<String>
     suspend fun deleteDownloadedTrack(trackId: String): Result<Unit>
     suspend fun recordPlayHistory(trackId: String, completionPercentage: Float)

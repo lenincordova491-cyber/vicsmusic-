@@ -652,6 +652,58 @@ class MusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getCanvasVideoUrl(track: Track): Result<String?> = withContext(ioDispatcher) {
+        runCatching {
+            if (track.sourceId == "local") return@runCatching null
+
+            val canvasDir = File(context.cacheDir, "canvas").apply { if (!exists()) mkdirs() }
+            val safeId = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            val cachedFile = File(canvasDir, "canvas_$safeId.mp4")
+            if (cachedFile.exists() && cachedFile.length() > 16_384L) {
+                return@runCatching Uri.fromFile(cachedFile).toString()
+            }
+
+            // 1. Try direct videoId if track is already a YouTube/Piped music video
+            val directVideoId = when {
+                track.id.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX) ->
+                    track.id.removePrefix(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)
+                track.id.startsWith("piped-music_") ->
+                    track.id.removePrefix("piped-music_")
+                else -> null
+            }
+
+            if (!directVideoId.isNullOrBlank()) {
+                val playerRoot = runCatching { innerTubeClient.player(directVideoId) }.getOrNull()
+                val directCanvasUrl = playerRoot?.let { InnerTubeParser.parseCanvasVideoUrl(it) }
+                if (!directCanvasUrl.isNullOrBlank()) {
+                    return@runCatching directCanvasUrl
+                }
+            }
+
+            // 2. If the track is an audio-only Topic track or from Spotify/JioSaavn/SoundCloud,
+            // resolve the official music video on YouTube to extract its 360p/480p H.264 stream
+            val videoQuery = "${track.title} ${track.artistName} official video".trim()
+            val searchRoot = runCatching {
+                innerTubeClient.search(query = videoQuery, params = null)
+            }.getOrNull()
+
+            val candidateVideoId = searchRoot
+                ?.let { InnerTubeParser.parseSearch(it).tracks }
+                ?.firstOrNull { it.videoId != directVideoId }
+                ?.videoId
+
+            if (!candidateVideoId.isNullOrBlank()) {
+                val mvPlayerRoot = runCatching { innerTubeClient.player(candidateVideoId) }.getOrNull()
+                val mvCanvasUrl = mvPlayerRoot?.let { InnerTubeParser.parseCanvasVideoUrl(it) }
+                if (!mvCanvasUrl.isNullOrBlank()) {
+                    return@runCatching mvCanvasUrl
+                }
+            }
+
+            null
+        }
+    }
+
     override suspend fun recordPlayHistory(trackId: String, completionPercentage: Float) = withContext(ioDispatcher) {
         val now = System.currentTimeMillis()
         playHistoryDao.insertHistory(

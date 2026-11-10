@@ -87,6 +87,25 @@ class PlayerViewModel @Inject constructor(
             initialValue = null
         )
 
+    val canvasVideoUrl: StateFlow<String?> = playbackState
+        .map { it.currentTrack?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { trackId ->
+            flow {
+                val track = playbackState.value.currentTrack
+                if (track != null && track.id == trackId) {
+                    val url = musicRepository.getCanvasVideoUrl(track).getOrNull()
+                    emit(url)
+                } else {
+                    emit(null)
+                }
+            }.flowOn(Dispatchers.IO)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null
+        )
+
     val artistTracks: StateFlow<List<Track>> = playbackState
         .map { it.currentTrack?.artistName }
         .distinctUntilChanged()

@@ -105,6 +105,7 @@ fun NowPlayingRoute(
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
     val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
+    val canvasVideoUrl by viewModel.canvasVideoUrl.collectAsStateWithLifecycle()
     val artistTracks by viewModel.artistTracks.collectAsStateWithLifecycle()
     val similarTracks by viewModel.similarTracks.collectAsStateWithLifecycle()
     val downloadedTrackIds by viewModel.downloadedTrackIds.collectAsStateWithLifecycle()
@@ -118,6 +119,7 @@ fun NowPlayingRoute(
         playbackState = playbackState,
         queueState = queueState,
         lyrics = lyrics,
+        canvasVideoUrl = canvasVideoUrl,
         artistTracks = artistTracks,
         similarTracks = similarTracks,
         onDismiss = onDismiss,
@@ -144,6 +146,7 @@ fun NowPlayingScreen(
     playbackState: PlaybackState,
     queueState: QueueState,
     lyrics: app.vicsmusic.core.model.Lyrics? = null,
+    canvasVideoUrl: String? = null,
     artistTracks: List<Track> = emptyList(),
     similarTracks: List<Track> = emptyList(),
     onDismiss: () -> Unit,
@@ -162,16 +165,23 @@ fun NowPlayingScreen(
     onTrackClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val track = playbackState.currentTrack
     var showQueueSheet by remember { mutableStateOf(false) }
     var showFullScreenLyrics by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf(TranslationLanguage.ORIGINAL) }
     var showTranslationSheet by remember { mutableStateOf(false) }
+    var canvasDataMode by remember { mutableStateOf(CanvasPreferences.getMode(context)) }
+    var showCanvasModeSheet by remember { mutableStateOf(false) }
+    val isCanvasAllowed = remember(canvasDataMode) {
+        CanvasPreferences.shouldPlayCanvas(context, canvasDataMode)
+    }
 
     BackHandler(enabled = true) {
         when {
             showFullScreenLyrics -> showFullScreenLyrics = false
             showTranslationSheet -> showTranslationSheet = false
+            showCanvasModeSheet -> showCanvasModeSheet = false
             showQueueSheet -> showQueueSheet = false
             else -> onDismiss()
         }
@@ -270,7 +280,13 @@ fun NowPlayingScreen(
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showCanvasModeSheet = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
                     Text(
                         text = stringResource(R.string.now_playing).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
@@ -278,7 +294,11 @@ fun NowPlayingScreen(
                         color = Color.White.copy(alpha = 0.7f)
                     )
                     Text(
-                        text = if (track?.sourceId == "local") "En este dispositivo" else "Streaming HD • Sin anuncios",
+                        text = when {
+                            track?.sourceId == "local" -> "En este dispositivo"
+                            canvasDataMode == CanvasDataMode.DISABLED -> "Canvas: Ahorro • Sin anuncios"
+                            else -> "Canvas ${if (canvasDataMode == CanvasDataMode.WIFI_ONLY) "Wi-Fi" else "HD"} • Sin anuncios"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF1DB954)
@@ -325,23 +345,16 @@ fun NowPlayingScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Center Album Artwork
-            Box(
+            // Center Album Artwork / Spotify Canvas Loop
+            SpotifyCanvasContainer(
+                staticArtworkUrl = track?.artworkUrl,
+                canvasVideoUrl = canvasVideoUrl,
+                isCanvasEnabledInSettings = isCanvasAllowed,
+                isNowPlayingExpanded = !showFullScreenLyrics && !showQueueSheet && !showTranslationSheet && !showCanvasModeSheet,
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                ArtworkImage(
-                    artworkUrl = track?.artworkUrl,
-                    contentDescription = track?.title,
-                    size = 280.dp,
-                    cornerRadius = 24.dp,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+                    .fillMaxWidth(0.88f)
+                    .aspectRatio(if (!canvasVideoUrl.isNullOrBlank() && isCanvasAllowed) 0.82f else 1f)
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -1444,6 +1457,86 @@ fun NowPlayingScreen(
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Canvas Data & Battery Saver Bottom Sheet
+    if (showCanvasModeSheet) {
+        val canvasSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showCanvasModeSheet = false },
+            sheetState = canvasSheetState,
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Spotify Canvas (Videos en bucle)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Decodificación H.264 sin pista de audio para proteger la batería",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                CanvasDataMode.entries.forEach { mode ->
+                    val isSelected = mode == canvasDataMode
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) Color(0xFF2E2E2E) else Color(0xFF181818)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                canvasDataMode = mode
+                                CanvasPreferences.setMode(context, mode)
+                                showCanvasModeSheet = false
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color(0xFF1DB954) else Color.White
+                                )
+                                Text(
+                                    text = mode.subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.65f)
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Seleccionado",
+                                    tint = Color(0xFF1DB954),
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
                     }

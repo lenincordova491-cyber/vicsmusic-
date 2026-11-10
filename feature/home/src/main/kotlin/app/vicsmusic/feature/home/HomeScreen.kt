@@ -130,6 +130,9 @@ fun HomeRoute(
             },
             onRefresh = viewModel::refreshCatalog,
             onFilterSelected = viewModel::onFilterSelected,
+            onProfileClick = { viewModel.setProfileOpen(true) },
+            onDismissProfile = { viewModel.setProfileOpen(false) },
+            onClearCache = viewModel::clearCatalogCache,
             onSettingsClick = { viewModel.setSettingsOpen(true) },
             onDismissSettings = { viewModel.setSettingsOpen(false) },
             onToggleExtension = viewModel::toggleExtension,
@@ -155,6 +158,9 @@ fun HomeScreen(
     onChartClick: (HomeChart) -> Unit,
     onRefresh: () -> Unit,
     onFilterSelected: (HomeCategoryFilter) -> Unit,
+    onProfileClick: () -> Unit = {},
+    onDismissProfile: () -> Unit = {},
+    onClearCache: () -> Unit = {},
     onSettingsClick: () -> Unit,
     onDismissSettings: () -> Unit,
     onToggleExtension: (String) -> Unit,
@@ -180,7 +186,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Spotify Top Bar: Greeting + Settings Gear (Tuerca de Ajustes)
+            // 1. Spotify Top Bar: Clickable User Profile + Greeting + Settings Gear
             item(key = "top_bar") {
                 Row(
                     modifier = Modifier
@@ -191,14 +197,20 @@ fun HomeScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable(onClick = onProfileClick)
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
                     ) {
-                        // User Avatar
+                        // User Profile Avatar (with YT Music / User Photo)
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
-                                .background(SpotifyGreen),
+                                .background(SpotifyGreen)
+                                .border(1.5.dp, if (uiState.isYtmLoggedIn) SpotifyGreen else Color.White.copy(alpha = 0.3f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -207,14 +219,36 @@ fun HomeScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.Black
                             )
+                            if (!uiState.userAvatarUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = uiState.userAvatarUrl,
+                                    contentDescription = "Perfil de usuario",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(CircleShape)
+                                )
+                            }
                         }
 
-                        Text(
-                            text = uiState.greeting,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Column {
+                            Text(
+                                text = uiState.greeting,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (uiState.isYtmLoggedIn) "Ver perfil • Cuenta YT Music" else "Mi perfil • Caché y canciones",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SpotifyGreen,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
                     Row(
@@ -431,7 +465,21 @@ fun HomeScreen(
             // 5. "Tu Mix Diario" + "Descubrimiento según tu gusto" (Adaptive Taste Carousels)
             if (uiState.dailyMix.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "daily_mix_carousel") {
-                    SectionHeader(title = "Recomendado para ti")
+                    SectionHeader(
+                        title = "Recomendado para ti",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "daily_mix_chart",
+                                    title = "Recomendado para ti",
+                                    subtitle = uiState.tasteSummaryLabel,
+                                    emoji = "🎧",
+                                    tracks = uiState.dailyMix.distinctBy { it.id },
+                                    coverUrl = uiState.dailyMix.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     Text(
                         text = uiState.tasteSummaryLabel,
                         style = MaterialTheme.typography.labelMedium,
@@ -443,7 +491,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.dailyMix, key = { "daily_${it.id}" }) { track ->
+                        items(uiState.dailyMix.distinctBy { it.id }, key = { "daily_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.dailyMix) },
@@ -456,12 +504,26 @@ fun HomeScreen(
 
             if (uiState.recommendedTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "recommended_discovery_carousel") {
-                    SectionHeader(title = "Descubrimiento según tu gusto")
+                    SectionHeader(
+                        title = "Descubrimiento según tu gusto",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "recommended_discovery_chart",
+                                    title = "Descubrimiento según tu gusto",
+                                    subtitle = "Selección inteligente basada en tus artistas y reproducciones",
+                                    emoji = "✨",
+                                    tracks = uiState.recommendedTracks.distinctBy { it.id },
+                                    coverUrl = uiState.recommendedTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.recommendedTracks, key = { "rec_${it.id}" }) { track ->
+                        items(uiState.recommendedTracks.distinctBy { it.id }, key = { "rec_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.recommendedTracks) },
@@ -475,12 +537,26 @@ fun HomeScreen(
             // 6. "Top Tendencias Globales" (Trending hits carousel)
             if (uiState.trendingTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "trending_hits_carousel") {
-                    SectionHeader(title = "Top Éxitos Globales")
+                    SectionHeader(
+                        title = "Top Éxitos Globales",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "top_50_global",
+                                    title = "Top Éxitos Globales",
+                                    subtitle = "Catálogo actualizado de tendencias y éxitos globales",
+                                    emoji = "🌍",
+                                    tracks = uiState.trendingTracks.distinctBy { it.id },
+                                    coverUrl = uiState.trendingTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.trendingTracks, key = { "trend_${it.id}" }) { track ->
+                        items(uiState.trendingTracks.distinctBy { it.id }, key = { "trend_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.trendingTracks) },
@@ -494,12 +570,26 @@ fun HomeScreen(
             // 7. "Cumbia y Fiesta" Carousel
             if (uiState.cumbiaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "cumbia_carousel") {
-                    SectionHeader(title = "Cumbia y Fiesta")
+                    SectionHeader(
+                        title = "Cumbia y Fiesta",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "top_50_peru",
+                                    title = "Cumbia y Fiesta",
+                                    subtitle = "Lo mejor de Grupo 5, Agua Marina, Ke Personajes, Armonía 10 y más",
+                                    emoji = "💃",
+                                    tracks = uiState.cumbiaTracks.distinctBy { it.id },
+                                    coverUrl = uiState.cumbiaTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.cumbiaTracks, key = { "cumbia_${it.id}" }) { track ->
+                        items(uiState.cumbiaTracks.distinctBy { it.id }, key = { "cumbia_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.cumbiaTracks) },
@@ -513,12 +603,26 @@ fun HomeScreen(
             // 8. "Rock & Pop Clásicos" Carousel
             if (uiState.rockPopTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "rock_pop_carousel") {
-                    SectionHeader(title = "Rock y Pop Clásicos")
+                    SectionHeader(
+                        title = "Rock y Pop Clásicos",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "rock_pop_chart",
+                                    title = "Rock y Pop Clásicos",
+                                    subtitle = "Himnos legendarios en español e inglés",
+                                    emoji = "🎸",
+                                    tracks = uiState.rockPopTracks.distinctBy { it.id },
+                                    coverUrl = uiState.rockPopTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.rockPopTracks, key = { "rock_${it.id}" }) { track ->
+                        items(uiState.rockPopTracks.distinctBy { it.id }, key = { "rock_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.rockPopTracks) },
@@ -532,12 +636,26 @@ fun HomeScreen(
             // 9. "Urbano & Pop Latino" Carousel
             if (uiState.urbanTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "urban_carousel") {
-                    SectionHeader(title = "Urbano y Tendencias")
+                    SectionHeader(
+                        title = "Urbano y Tendencias",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "viva_latino",
+                                    title = "Urbano y Tendencias",
+                                    subtitle = "Los mayores éxitos urbanos y reggaetón del momento",
+                                    emoji = "🔥",
+                                    tracks = uiState.urbanTracks.distinctBy { it.id },
+                                    coverUrl = uiState.urbanTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.urbanTracks, key = { "urban_${it.id}" }) { track ->
+                        items(uiState.urbanTracks.distinctBy { it.id }, key = { "urban_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.urbanTracks) },
@@ -551,12 +669,26 @@ fun HomeScreen(
             // 9b. "Salsa Clásica y Bailable" Carousel
             if (uiState.salsaTracks.isNotEmpty() && (uiState.selectedFilter == HomeCategoryFilter.ALL || uiState.selectedFilter == HomeCategoryFilter.MUSIC)) {
                 item(key = "salsa_carousel") {
-                    SectionHeader(title = "Salsa Clásica y Bailable")
+                    SectionHeader(
+                        title = "Salsa Clásica y Bailable",
+                        onSeeAllClick = {
+                            onChartClick(
+                                HomeChart(
+                                    id = "salsa_chart",
+                                    title = "Salsa Clásica y Bailable",
+                                    subtitle = "Clásicos inolvidables de Marc Anthony, Oscar D'León, Rubén Blades y más",
+                                    emoji = "🎺",
+                                    tracks = uiState.salsaTracks.distinctBy { it.id },
+                                    coverUrl = uiState.salsaTracks.firstNotNullOfOrNull { it.artworkUrl }
+                                )
+                            )
+                        }
+                    )
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
                     ) {
-                        items(uiState.salsaTracks, key = { "salsa_${it.id}" }) { track ->
+                        items(uiState.salsaTracks.distinctBy { it.id }, key = { "salsa_${it.id}" }) { track ->
                             MediaCard(
                                 track = track,
                                 onClick = { onTrackClick(track, uiState.salsaTracks) },
@@ -592,7 +724,7 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    items(uiState.downloadedTracks, key = { "dl_${it.id}" }) { track ->
+                    items(uiState.downloadedTracks.distinctBy { it.id }, key = { "dl_${it.id}" }) { track ->
                         TrackRow(
                             track = track,
                             onClick = { onTrackClick(track, uiState.downloadedTracks) }
@@ -600,68 +732,56 @@ fun HomeScreen(
                     }
                 }
             }
-
-            // 8. Extensiones y Fuentes Activas
-            item(key = "active_sources_section") {
-                SectionHeader(title = "Fuentes de música activas")
-                Text(
-                    text = "Configuradas desde el icono de tuerca para streaming sin anuncios",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
-                ) {
-                    items(uiState.availableExtensions, key = { it.id }) { ext ->
-                        val isActive = uiState.activeExtensionIds.contains(ext.id)
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isActive) SpotifyCardHover else SpotifyDarkCard.copy(alpha = 0.5f)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.width(160.dp).clickable { onSettingsClick() }
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = ext.displayName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = if (isActive) SpotifyGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (isActive) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Activa",
-                                            tint = SpotifyGreen,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = ext.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
 
-        // Settings Dialog (Tuerca de Ajustes de Extensiones)
+        // User Profile Dialog (when clicking Avatar / Greeting "Buenas noches")
+        if (uiState.isProfileOpen) {
+            UserProfileDialog(
+                uiState = uiState,
+                onDismiss = onDismissProfile,
+                onOpenLogin = {
+                    onDismissProfile()
+                    onOpenLogin()
+                },
+                onSyncYouTube = onSyncYouTube,
+                onLogoutYouTube = onLogoutYouTube,
+                onClearCache = onClearCache,
+                onOpenSettings = {
+                    onDismissProfile()
+                    onSettingsClick()
+                },
+                onOpenLikesPlaylist = {
+                    onDismissProfile()
+                    val tracksToShow = uiState.likedTracks.ifEmpty { uiState.quickAccessTracks }
+                    onChartClick(
+                        HomeChart(
+                            id = "user_liked_songs",
+                            title = "Tus Me Gusta",
+                            subtitle = "Canciones sincronizadas de tu perfil y favoritos",
+                            emoji = "💚",
+                            tracks = tracksToShow.distinctBy { it.id },
+                            coverUrl = tracksToShow.firstNotNullOfOrNull { it.artworkUrl }
+                        )
+                    )
+                },
+                onOpenHistoryPlaylist = {
+                    onDismissProfile()
+                    val tracksToShow = uiState.recentHistoryTracks.ifEmpty { uiState.dailyMix }
+                    onChartClick(
+                        HomeChart(
+                            id = "user_history_songs",
+                            title = "Historial de reproducción",
+                            subtitle = "Tus últimas canciones reproducidas y caché reciente",
+                            emoji = "🕒",
+                            tracks = tracksToShow.distinctBy { it.id },
+                            coverUrl = tracksToShow.firstNotNullOfOrNull { it.artworkUrl }
+                        )
+                    )
+                }
+            )
+        }
+
+        // Settings Dialog (Tuerca de Ajustes)
         if (uiState.isSettingsOpen) {
             SettingsExtensionsDialog(
                 extensions = uiState.availableExtensions,
@@ -692,14 +812,41 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-    )
+private fun SectionHeader(
+    title: String,
+    onSeeAllClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (onSeeAllClick != null) Modifier.clickable { onSeeAllClick() } else Modifier
+                )
+        )
+        if (onSeeAllClick != null) {
+            Text(
+                text = "Ver lista",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = SpotifyGreen,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onSeeAllClick() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -1014,6 +1161,14 @@ fun ArtistDetailScreen(
     modifier: Modifier = Modifier
 ) {
     var isFollowing by remember { mutableStateOf(false) }
+    val artistAlbums = remember(artist.topTracks) {
+        artist.topTracks.distinctBy { it.id }
+            .groupBy { it.albumName?.takeIf { a -> a.isNotBlank() } ?: "${it.title} (Sencillo)" }
+            .entries
+            .map { (albumTitle, tracksInAlbum) ->
+                Triple(albumTitle, tracksInAlbum.firstNotNullOfOrNull { it.artworkUrl }, tracksInAlbum)
+            }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -1198,9 +1353,66 @@ fun ArtistDetailScreen(
             }
         }
 
+        if (artistAlbums.isNotEmpty()) {
+            item(key = "artist_albums_section") {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                    Text(
+                        text = "Álbumes y discografía",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        items(artistAlbums, key = { "art_alb_${it.first}" }) { (albumTitle, coverUrl, albumTracks) ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .width(144.dp)
+                                    .clickable {
+                                        if (albumTracks.isNotEmpty()) {
+                                            onPlayTrack(albumTracks.first(), albumTracks)
+                                        }
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    ArtworkImage(
+                                        artworkUrl = coverUrl ?: artist.imageUrl,
+                                        contentDescription = albumTitle,
+                                        size = 124.dp,
+                                        cornerRadius = 8.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = albumTitle,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Álbum • ${albumTracks.size} tema(s)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SpotifyGreen,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item(key = "artist_popular_header") {
             Text(
-                text = "Canciones populares",
+                text = "Canciones populares (${artist.topTracks.size})",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -1770,48 +1982,341 @@ private fun SettingsExtensionsDialog(
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Activa o desactiva fuentes para personalizar el catálogo y streaming en Inicio:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                items(extensions, key = { it.id }) { ext ->
-                    val isChecked = activeIds.contains(ext.id)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(SpotifyDarkCard)
-                            .padding(10.dp),
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Verified,
+                            contentDescription = null,
+                            tint = SpotifyGreen
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Motores y extensiones activos por defecto",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "YouTube Music, Spotify Web, Apple Music, SoundCloud y letras sincronizadas están habilitados automáticamente sin requerir activación manual.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cerrar", color = SpotifyGreen, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = Color(0xFF1E1E1E),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
+}
+
+@Composable
+private fun UserProfileDialog(
+    uiState: HomeUiState,
+    onDismiss: () -> Unit,
+    onOpenLogin: () -> Unit,
+    onSyncYouTube: () -> Unit,
+    onLogoutYouTube: () -> Unit,
+    onClearCache: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenLikesPlaylist: () -> Unit,
+    onOpenHistoryPlaylist: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(SpotifyGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "V",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.Black
+                    )
+                    if (!uiState.userAvatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = uiState.userAvatarUrl,
+                            contentDescription = uiState.userName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                        )
+                    }
+                }
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = uiState.userName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        if (uiState.isYtmLoggedIn) {
+                            Icon(
+                                imageVector = Icons.Default.Verified,
+                                contentDescription = "Conectado",
+                                tint = SpotifyGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = uiState.userHandle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SpotifyGreen
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Tarjeta de Estadísticas Rápidas
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenLikesPlaylist)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${uiState.likedTracks.size}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = SpotifyGreen
+                            )
+                            Text(
+                                text = "Me Gusta",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(onClick = onOpenHistoryPlaylist)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${uiState.recentHistoryTracks.size}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Recientes",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.LightGray
+                            )
+                        }
+                    }
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${uiState.downloadedTracks.size}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF38BDF8)
+                            )
+                            Text(
+                                text = "Descargas",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.LightGray
+                            )
+                        }
+                    }
+                }
+
+                // Accesos directos a las canciones del usuario
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenLikesPlaylist)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = ext.displayName,
+                                text = "Canciones favoritas y sincronizadas",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
                             Text(
-                                text = ext.description,
+                                text = "Ver y reproducir todas tus canciones guardadas",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                color = Color.Gray
                             )
                         }
-                        Switch(
-                            checked = isChecked,
-                            onCheckedChange = { onToggle(ext.id) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = SpotifyGreen,
-                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                uncheckedTrackColor = SpotifyCardHover
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = SpotifyGreen
+                        )
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenHistoryPlaylist)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Historial de escucha y actividad",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
+                            Text(
+                                text = "Explora tus últimas reproducciones sin anuncios",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                // Sección de Caché de Usuario y YouTube Music
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SpotifyDarkCard),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Caché y Almacenamiento",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = uiState.cacheSizeLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SpotifyGreen
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onClearCache) {
+                                Text(
+                                    text = "Optimizar y limpiar caché",
+                                    color = SpotifyGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Conexión YouTube Music y Ajustes
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (uiState.isYtmLoggedIn) {
+                        TextButton(onClick = onSyncYouTube) {
+                            Text(
+                                text = if (uiState.isSyncingYtm) "Sincronizando..." else "Sincronizar YT Music",
+                                color = SpotifyGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(onClick = onLogoutYouTube) {
+                            Text(
+                                text = "Desvincular",
+                                color = Color(0xFFFF4D6D),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        TextButton(onClick = onOpenLogin) {
+                            Text(
+                                text = "Vincular cuenta YT Music",
+                                color = SpotifyGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    TextButton(onClick = onOpenSettings) {
+                        Text(
+                            text = "Ajustes",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }

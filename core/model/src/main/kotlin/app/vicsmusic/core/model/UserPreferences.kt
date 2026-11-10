@@ -47,6 +47,13 @@ data class UserPreferences(
     val ytmVisitorData: String? = null
 ) {
     val isYtmLoggedIn: Boolean
-        get() = !ytmCookieHeader.isNullOrBlank() &&
-            (ytmCookieHeader.contains("SAPISID=") || ytmCookieHeader.contains("__Secure-3PAPISID="))
+        get() = !ytmCookieHeader.isNullOrBlank() && (
+            ytmCookieHeader.contains("SAPISID=") ||
+                ytmCookieHeader.contains("__Secure-3PAPISID=") ||
+                ytmCookieHeader.contains("__Secure-1PAPISID=") ||
+                ytmCookieHeader.contains("PAPISID=") ||
+                ytmCookieHeader.contains("__Secure-3PSID=") ||
+                ytmCookieHeader.contains("SID=") ||
+                ytmCookieHeader.contains("LOGIN_INFO=")
+            )
 }

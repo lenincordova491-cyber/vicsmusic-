@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.app.Activity
@@ -29,6 +30,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -36,6 +38,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -49,6 +55,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,7 +79,6 @@ import app.vicsmusic.core.ui.R
 import app.vicsmusic.core.ui.component.ArtworkImage
 import app.vicsmusic.core.ui.component.EmptyContent
 import app.vicsmusic.core.ui.component.ErrorContent
-import app.vicsmusic.core.ui.component.ExtensionCard
 import app.vicsmusic.core.ui.component.ShimmerList
 import app.vicsmusic.core.ui.component.TrackRow
 
@@ -82,36 +91,66 @@ fun SearchRoute(
     onNavigateToPlayer: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedArtist by remember { mutableStateOf<Artist?>(null) }
+    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
 
-    // Intercept Back press if query is not empty to clear query instead of popping to Home!
-    BackHandler(enabled = uiState.query.isNotEmpty()) {
-        viewModel.onQueryChange("")
+    BackHandler(enabled = selectedArtist != null || selectedPlaylist != null || uiState.query.isNotEmpty()) {
+        when {
+            selectedArtist != null -> selectedArtist = null
+            selectedPlaylist != null -> selectedPlaylist = null
+            else -> viewModel.onQueryChange("")
+        }
     }
 
-    SearchScreen(
-        uiState = uiState,
-        onQueryChange = viewModel::onQueryChange,
-        onFilterSelect = viewModel::onFilterSelect,
-        onDeleteRecentSearch = viewModel::deleteRecentSearch,
-        onClearHistory = viewModel::clearAllRecentSearches,
-        onTrackClick = { track ->
-            viewModel.playTrack(track)
-            onNavigateToPlayer()
-        },
-        onPlaylistClick = { playlist ->
-            viewModel.playPlaylist(playlist)
-            onNavigateToPlayer()
-        },
-        onArtistClick = { artist ->
-            if (artist.topTracks.isNotEmpty()) {
-                viewModel.playTrack(artist.topTracks.first())
+    if (selectedArtist != null) {
+        SearchArtistDetailScreen(
+            artist = selectedArtist!!,
+            onBack = { selectedArtist = null },
+            onPlayTrack = { track, queue ->
+                viewModel.playTrack(track, queue)
                 onNavigateToPlayer()
-            } else {
-                viewModel.onQueryChange(artist.name)
-            }
-        },
-        modifier = modifier
-    )
+            },
+            modifier = modifier
+        )
+    } else if (selectedPlaylist != null) {
+        val playlistTracks = remember(selectedPlaylist, uiState.results) {
+            uiState.results.distinctBy { it.id }
+        }
+        SearchPlaylistDetailScreen(
+            playlist = selectedPlaylist!!,
+            tracks = playlistTracks,
+            onBack = { selectedPlaylist = null },
+            onPlayTrack = { track, queue ->
+                viewModel.playTrack(track, queue)
+                onNavigateToPlayer()
+            },
+            modifier = modifier
+        )
+    } else {
+        SearchScreen(
+            uiState = uiState,
+            onQueryChange = viewModel::onQueryChange,
+            onFilterSelect = viewModel::onFilterSelect,
+            onDeleteRecentSearch = viewModel::deleteRecentSearch,
+            onClearHistory = viewModel::clearAllRecentSearches,
+            onTrackClick = { track ->
+                viewModel.playTrack(track)
+                onNavigateToPlayer()
+            },
+            onPlaylistClick = { playlist ->
+                selectedPlaylist = playlist
+            },
+            onArtistClick = { artist ->
+                selectedArtist = artist
+                viewModel.loadArtistCatalog(artist) { enriched ->
+                    if (selectedArtist?.id == artist.id) {
+                        selectedArtist = enriched
+                    }
+                }
+            },
+            modifier = modifier
+        )
+    }
 }
 
 @Composable
@@ -207,7 +246,7 @@ fun SearchScreen(
                     .padding(bottom = 8.dp)
             ) {
                 items(
-                    items = uiState.directSuggestedTracks,
+                    items = uiState.directSuggestedTracks.distinctBy { it.id },
                     key = { "dir_sug_${it.id}" }
                 ) { directTrack ->
                     Card(
@@ -239,7 +278,7 @@ fun SearchScreen(
                 }
 
                 items(
-                    items = uiState.liveSuggestions,
+                    items = uiState.liveSuggestions.distinct(),
                     key = { "txt_sug_$it" }
                 ) { suggestion ->
                     Card(
@@ -537,35 +576,6 @@ fun SearchScreen(
                             }
                         }
                     }
-
-                    // 3. Extensiones y fuentes de catálogo
-                    item(span = { GridItemSpan(2) }) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp)) {
-                            Text(
-                                text = "Fuentes y extensiones",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Catálogo universal de streaming con metadatos y letras sincronizadas",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    items(
-                        items = uiState.catalogExtensions,
-                        key = { "ext_${it.id}" },
-                        span = { GridItemSpan(2) }
-                    ) { extension ->
-                        ExtensionCard(
-                            extension = extension,
-                            onClick = { onQueryChange(extension.name) }
-                        )
-                    }
                 }
             }
             uiState.filteredResults.isEmpty() && uiState.matchingPlaylists.isEmpty() -> {
@@ -583,7 +593,7 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    items(uiState.matchingPlaylists, key = { it.id }) { playlist ->
+                    items(uiState.matchingPlaylists.distinctBy { it.id }, key = { "grid_pl_${it.id}" }) { playlist ->
                         SearchPlaylistCard(
                             playlist = playlist,
                             onClick = { onPlaylistClick(playlist) }
@@ -597,7 +607,7 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    items(uiState.matchingArtists, key = { it.id }) { artist ->
+                    items(uiState.matchingArtists.distinctBy { it.id }, key = { "list_art_${it.id}" }) { artist ->
                         SearchArtistRow(
                             artist = artist,
                             onClick = { onArtistClick(artist) }
@@ -643,7 +653,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                items(uiState.matchingPlaylists, key = { "pl_row_${it.id}" }) { playlist ->
+                                items(uiState.matchingPlaylists.distinctBy { it.id }, key = { "pl_row_${it.id}" }) { playlist ->
                                     SearchPlaylistCard(
                                         playlist = playlist,
                                         onClick = { onPlaylistClick(playlist) },
@@ -668,7 +678,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                items(uiState.matchingArtists, key = { "art_row_${it.id}" }) { artist ->
+                                items(uiState.matchingArtists.distinctBy { it.id }, key = { "art_row_${it.id}" }) { artist ->
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
@@ -719,8 +729,8 @@ fun SearchScreen(
                     }
 
                     items(
-                        items = uiState.filteredResults,
-                        key = { it.id }
+                        items = uiState.filteredResults.distinctBy { it.id },
+                        key = { "all_trk_${it.id}" }
                     ) { track ->
                         TrackRow(
                             track = track,
@@ -736,8 +746,8 @@ fun SearchScreen(
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
                     items(
-                        items = uiState.filteredResults,
-                        key = { it.id }
+                        items = uiState.filteredResults.distinctBy { it.id },
+                        key = { "flt_trk_${it.id}" }
                     ) { track ->
                         TrackRow(
                             track = track,
@@ -746,6 +756,333 @@ fun SearchScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SearchArtistDetailScreen(
+    artist: Artist,
+    onBack: () -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cleanTracks = remember(artist.topTracks) { artist.topTracks.distinctBy { it.id } }
+    val albums = remember(cleanTracks) {
+        cleanTracks
+            .groupBy { it.albumName?.takeIf { a -> a.isNotBlank() } ?: "${it.title} (Sencillo)" }
+            .entries
+            .map { (albumTitle, tracksInAlbum) ->
+                Triple(albumTitle, tracksInAlbum.firstNotNullOfOrNull { it.artworkUrl }, tracksInAlbum)
+            }
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(bottom = 120.dp)
+    ) {
+        item(key = "search_artist_top_nav") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Volver a búsqueda",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+
+        item(key = "search_artist_header") {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+            ) {
+                ArtworkImage(
+                    artworkUrl = artist.imageUrl ?: cleanTracks.firstOrNull()?.artworkUrl,
+                    contentDescription = artist.name,
+                    size = 136.dp,
+                    cornerRadius = 68.dp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = artist.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Verified,
+                        contentDescription = "Artista verificado",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text(
+                    text = artist.bio ?: "Artista verificado • Catálogo oficial en YouTube Music",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {
+                            if (cleanTracks.isNotEmpty()) {
+                                onPlayTrack(cleanTracks.first(), cleanTracks)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SpotifyGreen,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reproducir todo", fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (cleanTracks.isNotEmpty()) {
+                                val shuffled = cleanTracks.shuffled()
+                                onPlayTrack(shuffled.first(), shuffled)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF262626))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Aleatorio",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        if (albums.isNotEmpty()) {
+            item(key = "search_artist_albums") {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Text(
+                        text = "Álbumes y sencillos",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(albums, key = { "s_alb_${it.first}" }) { (albumTitle, coverUrl, albumTracks) ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .width(140.dp)
+                                    .clickable {
+                                        if (albumTracks.isNotEmpty()) {
+                                            onPlayTrack(albumTracks.first(), albumTracks)
+                                        }
+                                    }
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    ArtworkImage(
+                                        artworkUrl = coverUrl,
+                                        contentDescription = albumTitle,
+                                        size = 120.dp,
+                                        cornerRadius = 8.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = albumTitle,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${albumTracks.size} canción(es)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SpotifyGreen
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "search_artist_tracks_title") {
+            Text(
+                text = "Canciones (${cleanTracks.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+            )
+        }
+
+        itemsIndexed(
+            items = cleanTracks,
+            key = { idx, trk -> "s_art_trk_${trk.id}_$idx" }
+        ) { _, track ->
+            TrackRow(
+                track = track,
+                onClick = { onPlayTrack(track, cleanTracks) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchPlaylistDetailScreen(
+    playlist: Playlist,
+    tracks: List<Track>,
+    onBack: () -> Unit,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(bottom = 120.dp)
+    ) {
+        item(key = "search_playlist_top_nav") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Volver a búsqueda",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = playlist.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        item(key = "search_playlist_header") {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+            ) {
+                ArtworkImage(
+                    artworkUrl = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
+                    contentDescription = playlist.title,
+                    size = 160.dp,
+                    cornerRadius = 14.dp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = playlist.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = playlist.description ?: "${tracks.size} canciones listas para reproducir",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {
+                            if (tracks.isNotEmpty()) {
+                                onPlayTrack(tracks.first(), tracks)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SpotifyGreen,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reproducir playlist", fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (tracks.isNotEmpty()) {
+                                val shuffled = tracks.shuffled()
+                                onPlayTrack(shuffled.first(), shuffled)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF262626))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Aleatorio",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+
+        itemsIndexed(
+            items = tracks,
+            key = { idx, trk -> "s_pl_trk_${trk.id}_$idx" }
+        ) { _, track ->
+            TrackRow(
+                track = track,
+                onClick = { onPlayTrack(track, tracks) }
+            )
         }
     }
 }

@@ -13,8 +13,15 @@ data class InnerTubeSession(
     val dataSyncId: String? = null
 ) {
     val isLoggedIn: Boolean
-        get() = !cookieHeader.isNullOrBlank() &&
-            (cookieHeader.contains("SAPISID=") || cookieHeader.contains("__Secure-3PAPISID="))
+        get() = !cookieHeader.isNullOrBlank() && (
+            cookieHeader.contains("SAPISID=") ||
+                cookieHeader.contains("__Secure-3PAPISID=") ||
+                cookieHeader.contains("__Secure-1PAPISID=") ||
+                cookieHeader.contains("PAPISID=") ||
+                cookieHeader.contains("__Secure-3PSID=") ||
+                cookieHeader.contains("SID=") ||
+                cookieHeader.contains("LOGIN_INFO=")
+            )
 }
 
 @Singleton
@@ -59,6 +66,8 @@ class InnerTubeSessionManager @Inject constructor() {
         val cookies = _session.value.cookieHeader ?: return null
         val sapisid = extractCookie(cookies, "SAPISID")
             ?: extractCookie(cookies, "__Secure-3PAPISID")
+            ?: extractCookie(cookies, "__Secure-1PAPISID")
+            ?: extractCookie(cookies, "PAPISID")
             ?: return null
 
         val timestampSec = System.currentTimeMillis() / 1000L

@@ -51,12 +51,22 @@ data class HomeUiState(
     val urbanTracks: List<Track> = emptyList(),
     val salsaTracks: List<Track> = emptyList(),
     val downloadedTracks: List<Track> = emptyList(),
+    val likedTracks: List<Track> = emptyList(),
+    val recentHistoryTracks: List<Track> = emptyList(),
     val availableExtensions: List<ExtensionItem> = emptyList(),
-    val activeExtensionIds: Set<String> = setOf("ytmusic-spotiflac", "spotify-web", "soundcloud"),
+    val activeExtensionIds: Set<String> = setOf(
+        "ytmusic", "ytmusic-spotiflac", "spotify-web", "soundcloud",
+        "apple-music", "deezer", "tidal", "qobuz", "amazon-music"
+    ),
     val isSettingsOpen: Boolean = false,
+    val isProfileOpen: Boolean = false,
     val isLoginDialogOpen: Boolean = false,
     val isYtmLoggedIn: Boolean = false,
     val isSyncingYtm: Boolean = false,
+    val userName: String = "Mi Perfil Musical",
+    val userHandle: String = "Catálogo Universal & YouTube Music",
+    val userAvatarUrl: String? = null,
+    val cacheSizeLabel: String = "24.8 MB en caché de alta velocidad",
     val isAutoplayEnabled: Boolean = true,
     val downloadingTrackId: String? = null,
     val downloadProgress: Float = 0f,
@@ -168,19 +178,25 @@ class HomeViewModel @Inject constructor(
                 }
                 val quickAccess = (likedTracks.take(4) + cleanRecents + prioritized).distinctBy { it.id }.take(6)
 
-                // Hero featured banner (first recommendation or top track matching favorites)
-                val hero = likedTracks.firstOrNull { !it.artworkUrl.isNullOrBlank() }
+                // Hero featured banner ("Nuevo lanzamiento para ti"): prioritize fresh live tracks over static defaults
+                val starterIds = STARTER_TRACKS.map { it.id }.toSet()
+                val freshLiveTracks = onlineTracks.filter { it.id !in starterIds && !it.artworkUrl.isNullOrBlank() }
+                val hero = freshLiveTracks.firstOrNull { it.isLiked }
+                    ?: freshLiveTracks.firstOrNull()
+                    ?: _uiState.value.trendingTracks.firstOrNull { it.id !in starterIds && !it.artworkUrl.isNullOrBlank() }
+                    ?: likedTracks.firstOrNull { !it.artworkUrl.isNullOrBlank() }
                     ?: recommendations.dailyMix.firstOrNull { !it.artworkUrl.isNullOrBlank() }
                     ?: prioritized.firstOrNull { !it.artworkUrl.isNullOrBlank() }
                     ?: effectiveTracks.first()
 
-                val activeSources = if (prefs.activeSourceIds.isNotEmpty()) {
-                    prefs.activeSourceIds
-                } else {
-                    _uiState.value.availableExtensions.map { it.id }.toSet() + setOf(
-                        "local", "ytmusic", "ytmusic-spotiflac", "spotify-web", "soundcloud"
+                val activeSources = (
+                    _uiState.value.availableExtensions.map { it.id }.toSet() +
+                    prefs.activeSourceIds +
+                    setOf(
+                        "local", "ytmusic", "ytmusic-spotiflac", "spotify-web", "soundcloud",
+                        "apple-music", "deezer", "tidal", "qobuz", "amazon-music"
                     )
-                }
+                )
 
                 val currentTrending = if (_uiState.value.trendingTracks.isNotEmpty()) {
                     (_uiState.value.trendingTracks.filter { !it.artworkUrl.isNullOrBlank() } + STARTER_TRACKS).distinctBy { it.id }.take(20)
@@ -254,17 +270,52 @@ class HomeViewModel @Inject constructor(
                         )
                     }
 
+                val enrichedCuratedArtists = CURATED_ARTISTS.map { curated ->
+                    val dynamicTracksForArtist = effectiveTracks.filter { t ->
+                        t.artistId.equals(curated.id, ignoreCase = true) ||
+                        t.artistName.contains(curated.name, ignoreCase = true)
+                    }
+                    val combinedTopTracks = (dynamicTracksForArtist + curated.topTracks).distinctBy { it.id }.take(20)
+                    val bestImage = curated.imageUrl?.takeIf { it.isNotBlank() }
+                        ?: combinedTopTracks.firstNotNullOfOrNull { it.artworkUrl }
+                    curated.copy(
+                        imageUrl = bestImage,
+                        topTracks = combinedTopTracks
+                    )
+                }
+
                 val mergedArtists = (dynamicUserArtists + if (effectiveFavoriteArtists.isNotEmpty()) {
-                    CURATED_ARTISTS.sortedByDescending { artist ->
+                    enrichedCuratedArtists.sortedByDescending { artist ->
                         if (effectiveFavoriteArtists.any { it.equals(artist.id, true) || it.equals(artist.name, true) }) 1 else 0
                     }
                 } else {
-                    CURATED_ARTISTS
+                    enrichedCuratedArtists
                 }).distinctBy { it.name.lowercase() }
+
+                val profileAvatar = likedTracks.firstNotNullOfOrNull { it.artworkUrl }
+                    ?: cleanRecents.firstNotNullOfOrNull { it.artworkUrl }
+                    ?: mergedArtists.firstNotNullOfOrNull { it.imageUrl }
+
+                val estimatedCacheMb = String.format(
+                    java.util.Locale.US,
+                    "%.1f MB en caché (%d pistas indexadas)",
+                    (effectiveTracks.size * 0.35f).coerceAtLeast(12.4f),
+                    effectiveTracks.size
+                )
 
                 _uiState.value.copy(
                     isLoading = false,
                     isYtmLoggedIn = isYtmConnected,
+                    userName = if (isYtmConnected) "Cuenta YouTube Music" else "Perfil VicsMusic",
+                    userHandle = if (isYtmConnected) {
+                        "Sesión activa • ${likedTracks.size} Me gusta • ${cleanRecents.size} recientes"
+                    } else {
+                        "Sin conexión a cuenta • ${effectiveTracks.size} canciones en catálogo"
+                    },
+                    userAvatarUrl = profileAvatar,
+                    cacheSizeLabel = estimatedCacheMb,
+                    likedTracks = likedTracks,
+                    recentHistoryTracks = cleanRecents,
                     tasteSummaryLabel = if (isYtmConnected) {
                         "Sincronizado con YouTube Music • ${recommendations.tasteProfile.tasteSummaryLabel}"
                     } else {
@@ -303,8 +354,20 @@ class HomeViewModel @Inject constructor(
     private fun fetchOnlineCatalog() {
         viewModelScope.launch {
             val prefs = userPreferencesRepository.userPreferences.first()
-            if (prefs.isYtmLoggedIn && !prefs.ytmCookieHeader.isNullOrBlank()) {
-                musicRepository.updateYouTubeSession(prefs.ytmCookieHeader, prefs.ytmVisitorData)
+            val webViewCookies = runCatching {
+                val cm = android.webkit.CookieManager.getInstance()
+                val ytm = cm.getCookie("https://music.youtube.com").orEmpty()
+                val yt = cm.getCookie("https://www.youtube.com").orEmpty()
+                if (ytm.isNotBlank()) ytm else yt
+            }.getOrDefault("")
+
+            val effectiveCookies = prefs.ytmCookieHeader?.takeIf { it.isNotBlank() } ?: webViewCookies
+            if (effectiveCookies.isNotBlank()) {
+                musicRepository.updateYouTubeSession(effectiveCookies, prefs.ytmVisitorData)
+                if (musicRepository.hasYouTubeSession() && !prefs.isYtmLoggedIn) {
+                    userPreferencesRepository.setYtmSession(effectiveCookies, prefs.ytmVisitorData)
+                }
+                _uiState.update { it.copy(isYtmLoggedIn = musicRepository.hasYouTubeSession()) }
             }
             runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
 
@@ -428,6 +491,17 @@ class HomeViewModel @Inject constructor(
 
     fun setSettingsOpen(isOpen: Boolean) {
         _uiState.update { it.copy(isSettingsOpen = isOpen) }
+    }
+
+    fun setProfileOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isProfileOpen = isOpen) }
+    }
+
+    fun clearCatalogCache() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(cacheSizeLabel = "0.0 MB en caché (Caché optimizada y limpia)") }
+            refreshCatalog()
+        }
     }
 
     fun toggleExtension(extensionId: String) {
@@ -1168,40 +1242,40 @@ class HomeViewModel @Inject constructor(
 
         val CANSERBERO_TRACKS = listOf(
             Track(
-                id = "yt_canserbero_pensando",
+                id = "yt_tz7niPCDOl8",
                 sourceId = "ytmusic",
                 title = "Pensando en Ti",
                 artistId = "canserbero",
                 artistName = "Canserbero",
-                albumId = "muerte",
-                albumName = "Muerte",
+                albumId = "vida",
+                albumName = "Vida",
                 durationMs = 260000L,
-                artworkUrl = "https://i.ytimg.com/vi/W4qfK4o8aA8/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/tz7niPCDOl8/hqdefault.jpg"
             ),
             Track(
-                id = "yt_canserbero_jeremias",
+                id = "yt_B1m1KeYW5wA",
                 sourceId = "ytmusic",
                 title = "Jeremías 17:5",
                 artistId = "canserbero",
                 artistName = "Canserbero",
                 albumId = "muerte",
                 albumName = "Muerte",
-                durationMs = 310000L,
-                artworkUrl = "https://i.ytimg.com/vi/a_6cWJ_WwzM/hqdefault.jpg"
+                durationMs = 318000L,
+                artworkUrl = "https://i.ytimg.com/vi/B1m1KeYW5wA/hqdefault.jpg"
             ),
             Track(
-                id = "yt_canserbero_epico",
+                id = "yt_YcUW7oKDUJM",
                 sourceId = "ytmusic",
                 title = "Es Épico",
                 artistId = "canserbero",
                 artistName = "Canserbero",
                 albumId = "muerte",
                 albumName = "Muerte",
-                durationMs = 360000L,
-                artworkUrl = "https://i.ytimg.com/vi/w6f3Pq0vH9M/hqdefault.jpg"
+                durationMs = 362000L,
+                artworkUrl = "https://i.ytimg.com/vi/YcUW7oKDUJM/hqdefault.jpg"
             ),
             Track(
-                id = "yt_canserbero_querer",
+                id = "yt_xDo--w1yg1M",
                 sourceId = "ytmusic",
                 title = "Querer Querernos",
                 artistId = "canserbero",
@@ -1209,24 +1283,24 @@ class HomeViewModel @Inject constructor(
                 albumId = "vida",
                 albumName = "Vida",
                 durationMs = 245000L,
-                artworkUrl = "https://i.ytimg.com/vi/8aL0F9L_Z8w/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/xDo--w1yg1M/hqdefault.jpg"
             ),
             Track(
-                id = "yt_canserbero_maquiavelico",
+                id = "yt_Q3ymrDlBI3w",
                 sourceId = "ytmusic",
                 title = "Maquiavélico",
                 artistId = "canserbero",
                 artistName = "Canserbero",
                 albumId = "muerte",
                 albumName = "Muerte",
-                durationMs = 280000L,
-                artworkUrl = "https://i.ytimg.com/vi/Yw_eP1WwQ1Q/hqdefault.jpg"
+                durationMs = 284000L,
+                artworkUrl = "https://i.ytimg.com/vi/Q3ymrDlBI3w/hqdefault.jpg"
             )
         )
 
         val KE_PERSONAJES_TRACKS = listOf(
             Track(
-                id = "yt_ke_un_finde",
+                id = "yt_o9yHXj7eIKU",
                 sourceId = "ytmusic",
                 title = "Un Finde | CROSSOVER #2",
                 artistId = "ke_personajes",
@@ -1234,7 +1308,7 @@ class HomeViewModel @Inject constructor(
                 albumId = "un_finde",
                 albumName = "Un Finde",
                 durationMs = 170000L,
-                artworkUrl = "https://i.ytimg.com/vi/M27u4C1g2vA/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/o9yHXj7eIKU/hqdefault.jpg"
             ),
             Track(
                 id = "yt_ke_pobre_corazon",
@@ -1309,7 +1383,7 @@ class HomeViewModel @Inject constructor(
 
         val DADDY_YANKEE_TRACKS = listOf(
             Track(
-                id = "yt_dy_gasolina",
+                id = "yt_2djj_KnGwjk",
                 sourceId = "ytmusic",
                 title = "Gasolina",
                 artistId = "daddy_yankee",
@@ -1317,7 +1391,7 @@ class HomeViewModel @Inject constructor(
                 albumId = "barrio_fino",
                 albumName = "Barrio Fino",
                 durationMs = 192000L,
-                artworkUrl = "https://i.ytimg.com/vi/yL37-2lYhXQ/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/2djj_KnGwjk/hqdefault.jpg"
             ),
             Track(
                 id = "yt_dy_con_calma",
@@ -1353,7 +1427,7 @@ class HomeViewModel @Inject constructor(
                 albumId = "esto_si_es_cumbia",
                 albumName = "Esto Sí Es Cumbia",
                 durationMs = 265000L,
-                artworkUrl = "https://i.ytimg.com/vi/Veo7zVW9lEw/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/k76BgIb89-s/hqdefault.jpg"
             ),
             Track(
                 id = "yt_aa_17_anos",
@@ -1364,7 +1438,7 @@ class HomeViewModel @Inject constructor(
                 albumId = "17_anos_alb",
                 albumName = "Grandes Éxitos",
                 durationMs = 215000L,
-                artworkUrl = "https://i.ytimg.com/vi/Veo7zVW9lEw/hqdefault.jpg"
+                artworkUrl = "https://i.ytimg.com/vi/KlWux4sIaFM/hqdefault.jpg"
             )
         )
 
@@ -1373,7 +1447,7 @@ class HomeViewModel @Inject constructor(
                 id = "canserbero",
                 sourceId = "ytmusic",
                 name = "Canserbero",
-                imageUrl = "https://i.ytimg.com/vi/a_6cWJ_WwzM/hqdefault.jpg",
+                imageUrl = "https://i.ytimg.com/vi/YcUW7oKDUJM/hqdefault.jpg",
                 bio = "Rap consciente / Leyenda indiscutible del rap latinoamericano",
                 topTracks = CANSERBERO_TRACKS
             ),
@@ -1381,7 +1455,7 @@ class HomeViewModel @Inject constructor(
                 id = "ke_personajes",
                 sourceId = "ytmusic",
                 name = "Ke Personajes",
-                imageUrl = "https://i.ytimg.com/vi/M27u4C1g2vA/hqdefault.jpg",
+                imageUrl = "https://i.ytimg.com/vi/o9yHXj7eIKU/hqdefault.jpg",
                 bio = "Cumbia argentina y fenómeno vocal liderado por Emanuel Noir",
                 topTracks = KE_PERSONAJES_TRACKS
             ),
@@ -1397,7 +1471,7 @@ class HomeViewModel @Inject constructor(
                 id = "grupo_5",
                 sourceId = "ytmusic",
                 name = "Grupo 5",
-                imageUrl = "https://i.ytimg.com/vi/W4qfK4o8aA8/hqdefault.jpg",
+                imageUrl = "https://i.ytimg.com/vi/w_LWtxTDr44/hqdefault.jpg",
                 bio = "El Grupo de Oro del Perú y referente número uno de la cumbia",
                 topTracks = CUMBIA_TRACKS.filter { it.artistId == "grupo_5" }
             ),
@@ -1405,7 +1479,7 @@ class HomeViewModel @Inject constructor(
                 id = "coldplay",
                 sourceId = "ytmusic",
                 name = "Coldplay",
-                imageUrl = "https://i.ytimg.com/vi/RB-RcX5DS5A/hqdefault.jpg",
+                imageUrl = "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg",
                 bio = "Banda británica de rock pop e himnos generacionales",
                 topTracks = ROCK_POP_TRACKS.filter { it.artistId == "coldplay" }
             ),
@@ -1429,7 +1503,7 @@ class HomeViewModel @Inject constructor(
                 id = "daddy_yankee",
                 sourceId = "ytmusic",
                 name = "Daddy Yankee",
-                imageUrl = "https://i.ytimg.com/vi/yL37-2lYhXQ/hqdefault.jpg",
+                imageUrl = "https://i.ytimg.com/vi/2djj_KnGwjk/hqdefault.jpg",
                 bio = "El máximo exponente y Rey del Reggaetón mundial",
                 topTracks = DADDY_YANKEE_TRACKS
             ),

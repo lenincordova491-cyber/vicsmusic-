@@ -236,10 +236,33 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    fun playTrack(track: Track) {
-        val queue = _uiState.value.filteredResults.ifEmpty { listOf(track) }
+    fun playTrack(track: Track, customQueue: List<Track> = emptyList()) {
+        val queue = customQueue.ifEmpty { _uiState.value.filteredResults }.ifEmpty { listOf(track) }
         val index = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
         playbackConnection.playQueue(queue, index)
+    }
+
+    fun loadArtistCatalog(artist: Artist, onLoaded: (Artist) -> Unit) {
+        viewModelScope.launch {
+            val existingTracks = (artist.topTracks + _uiState.value.results.filter {
+                it.artistName.contains(artist.name, ignoreCase = true)
+            }).distinctBy { it.id }
+
+            if (existingTracks.size >= 8) {
+                onLoaded(artist.copy(topTracks = existingTracks))
+                return@launch
+            }
+
+            val fetched = musicRepository.searchTracks(artist.name).getOrDefault(emptyList())
+            val combined = (existingTracks + fetched).distinctBy { it.id }
+            val bestAvatar = artist.imageUrl ?: combined.firstNotNullOfOrNull { it.artworkUrl }
+            onLoaded(
+                artist.copy(
+                    imageUrl = bestAvatar,
+                    topTracks = combined.take(25)
+                )
+            )
+        }
     }
 
     companion object {

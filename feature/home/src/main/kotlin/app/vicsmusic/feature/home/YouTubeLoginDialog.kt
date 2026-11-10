@@ -84,28 +84,49 @@ fun YouTubeLoginDialog(
     var hasCompleted by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
+    fun hasAuthCookies(cookieStr: String): Boolean {
+        return cookieStr.contains("SAPISID=") ||
+            cookieStr.contains("__Secure-3PAPISID=") ||
+            cookieStr.contains("__Secure-1PAPISID=") ||
+            cookieStr.contains("PAPISID=") ||
+            cookieStr.contains("__Secure-3PSID=") ||
+            cookieStr.contains("SID=") ||
+            cookieStr.contains("LOGIN_INFO=")
+    }
+
     fun tryCaptureSession(currentUrl: String?, forceCapture: Boolean = false): Boolean {
         if (hasCompleted) return true
         val cookieManager = runCatching { CookieManager.getInstance() }.getOrNull() ?: return false
         val ytmCookies = runCatching { cookieManager.getCookie(YTM_BASE_URL) }.getOrNull().orEmpty()
         val ytCookies = runCatching { cookieManager.getCookie(YT_BASE_URL) }.getOrNull().orEmpty()
 
-        val mergedCookies = when {
-            ytmCookies.contains("SAPISID=") || ytmCookies.contains("__Secure-3PAPISID=") -> ytmCookies
-            ytCookies.contains("SAPISID=") || ytCookies.contains("__Secure-3PAPISID=") -> ytCookies
-            else -> ""
+        val combinedCookieMap = linkedMapOf<String, String>()
+        listOf(ytCookies, ytmCookies).forEach { raw ->
+            raw.split(';').forEach { pair ->
+                val trimmed = pair.trim()
+                val eq = trimmed.indexOf('=')
+                if (eq > 0) {
+                    combinedCookieMap[trimmed.substring(0, eq).trim()] = trimmed.substring(eq + 1).trim()
+                }
+            }
         }
+        val mergedCookies = combinedCookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
         val isOnYouTubeDomain = currentUrl?.contains("music.youtube.com", ignoreCase = true) == true ||
-            (forceCapture && currentUrl?.contains("youtube.com", ignoreCase = true) == true)
+            currentUrl?.contains("youtube.com", ignoreCase = true) == true
 
-        if (mergedCookies.isNotBlank() && (isOnYouTubeDomain || forceCapture)) {
+        if (hasAuthCookies(mergedCookies) && (isOnYouTubeDomain || forceCapture)) {
             hasCompleted = true
             runCatching { cookieManager.flush() }
-            val visitorData = mergedCookies.split(';')
-                .map { it.trim() }
-                .firstOrNull { it.startsWith("VISITOR_INFO1_LIVE=") }
-                ?.substringAfter('=')
+            val visitorData = combinedCookieMap["VISITOR_INFO1_LIVE"]
+            runCatching {
+                context.getSharedPreferences("vicsmusic_ytm_session", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("cookie_header", mergedCookies)
+                    .putString("visitor_data", visitorData)
+                    .putBoolean("is_logged_in", true)
+                    .commit()
+            }
             onLoginSuccess(mergedCookies, visitorData)
             return true
         }
@@ -148,7 +169,13 @@ fun YouTubeLoginDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        IconButton(onClick = onDismiss) {
+                        IconButton(
+                            onClick = {
+                                if (!tryCaptureSession(webViewRef?.url, forceCapture = true)) {
+                                    onDismiss()
+                                }
+                            }
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Cerrar",

@@ -332,7 +332,7 @@ class MusicRepositoryImpl @Inject constructor(
                     preferredArtists = preferredArtists
                 )
 
-                val finalTracks = smartRanking.rankedTracks
+                val finalTracks = smartRanking.rankedTracks.distinctBy { it.id }
                 val bestTopTrack = innerTubeFull?.topResultTrack ?: smartRanking.topResult ?: finalTracks.firstOrNull()
 
                 val realArtists = innerTubeFull?.artists.orEmpty().map { artist ->
@@ -341,27 +341,27 @@ class MusicRepositoryImpl @Inject constructor(
                             artist.name.contains(it.artistName, ignoreCase = true)
                     }
                     artist.copy(
-                        imageUrl = artist.imageUrl ?: artistTracks.firstOrNull()?.artworkUrl,
+                        imageUrl = artist.imageUrl?.takeIf { it.isNotBlank() } ?: artistTracks.firstOrNull()?.artworkUrl,
                         topTracks = artistTracks.ifEmpty { finalTracks.take(5) }
                     )
-                }
+                }.distinctBy { it.id }
 
                 val fallbackArtists = if (realArtists.isEmpty()) {
-                    smartRanking.matchedArtists.take(6).map { name ->
+                    smartRanking.matchedArtists.distinctBy { it.lowercase().trim() }.take(6).map { name ->
                         val artistTracks = finalTracks.filter { it.artistName.equals(name, ignoreCase = true) }
                         app.vicsmusic.core.model.Artist(
-                            id = "art_${name.lowercase().replace(" ", "_")}",
+                            id = "art_${name.lowercase().trim().replace(Regex("\\s+"), "_")}",
                             sourceId = "ytmusic",
                             name = name,
                             imageUrl = artistTracks.firstOrNull()?.artworkUrl,
                             topTracks = artistTracks
                         )
-                    }
+                    }.distinctBy { it.id }
                 } else {
                     realArtists
                 }
 
-                val realPlaylists = innerTubeFull?.playlists.orEmpty()
+                val realPlaylists = innerTubeFull?.playlists.orEmpty().distinctBy { it.id }
                 val finalPlaylists = if (realPlaylists.isNotEmpty()) {
                     realPlaylists
                 } else if (finalTracks.isNotEmpty()) {
@@ -389,8 +389,8 @@ class MusicRepositoryImpl @Inject constructor(
                     topResultTrack = bestTopTrack,
                     topResultArtist = innerTubeFull?.topResultArtist ?: fallbackArtists.firstOrNull(),
                     tracks = finalTracks,
-                    artists = fallbackArtists,
-                    playlists = finalPlaylists
+                    artists = fallbackArtists.distinctBy { it.id },
+                    playlists = finalPlaylists.distinctBy { it.id }
                 )
             }
         }
@@ -681,6 +681,23 @@ class MusicRepositoryImpl @Inject constructor(
                 return@runCatching Uri.fromFile(cachedFile).toString()
             }
 
+            val canvasProfiles = listOf(
+                app.vicsmusic.source.remote.innertube.InnerTubeClients.ANDROID,
+                app.vicsmusic.source.remote.innertube.InnerTubeClients.IOS,
+                app.vicsmusic.source.remote.innertube.InnerTubeClients.ANDROID_VR
+            )
+
+            suspend fun resolveVideoStreamForId(videoId: String): String? {
+                for (profile in canvasProfiles) {
+                    val playerRoot = runCatching { innerTubeClient.player(videoId, profile) }.getOrNull() ?: continue
+                    val streamUrl = InnerTubeParser.parseCanvasVideoUrl(playerRoot)
+                    if (!streamUrl.isNullOrBlank()) {
+                        return streamUrl
+                    }
+                }
+                return null
+            }
+
             // 1. Try direct videoId if track is already a YouTube/Piped music video
             val directVideoId = when {
                 track.id.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX) ->
@@ -691,8 +708,7 @@ class MusicRepositoryImpl @Inject constructor(
             }
 
             if (!directVideoId.isNullOrBlank()) {
-                val playerRoot = runCatching { innerTubeClient.player(directVideoId) }.getOrNull()
-                val directCanvasUrl = playerRoot?.let { InnerTubeParser.parseCanvasVideoUrl(it) }
+                val directCanvasUrl = resolveVideoStreamForId(directVideoId)
                 if (!directCanvasUrl.isNullOrBlank()) {
                     return@runCatching directCanvasUrl
                 }
@@ -701,18 +717,25 @@ class MusicRepositoryImpl @Inject constructor(
             // 2. If the track is an audio-only Topic track or from Spotify/JioSaavn/SoundCloud,
             // resolve the official music video on YouTube to extract its 360p/480p H.264 stream
             val videoQuery = "${track.title} ${track.artistName} official video".trim()
-            val searchRoot = runCatching {
+            val videosSearchRoot = runCatching {
+                innerTubeClient.search(
+                    query = videoQuery,
+                    params = app.vicsmusic.source.remote.innertube.InnerTubeSearchParams.VIDEOS
+                )
+            }.getOrNull() ?: runCatching {
                 innerTubeClient.search(query = videoQuery, params = null)
             }.getOrNull()
 
-            val candidateVideoId = searchRoot
+            val candidateVideoIds = videosSearchRoot
                 ?.let { InnerTubeParser.parseSearch(it).tracks }
-                ?.firstOrNull { it.videoId != directVideoId }
-                ?.videoId
+                ?.map { it.videoId }
+                ?.filter { it.isNotBlank() && it != directVideoId }
+                ?.distinct()
+                ?.take(3)
+                .orEmpty()
 
-            if (!candidateVideoId.isNullOrBlank()) {
-                val mvPlayerRoot = runCatching { innerTubeClient.player(candidateVideoId) }.getOrNull()
-                val mvCanvasUrl = mvPlayerRoot?.let { InnerTubeParser.parseCanvasVideoUrl(it) }
+            for (candidateVideoId in candidateVideoIds) {
+                val mvCanvasUrl = resolveVideoStreamForId(candidateVideoId)
                 if (!mvCanvasUrl.isNullOrBlank()) {
                     return@runCatching mvCanvasUrl
                 }

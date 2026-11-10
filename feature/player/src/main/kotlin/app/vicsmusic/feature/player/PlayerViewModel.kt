@@ -145,14 +145,18 @@ class PlayerViewModel @Inject constructor(
             flow<List<Track>> {
                 if (!artistName.isNullOrBlank()) {
                     val allTracks = musicRepository.getAllTracks().firstOrNull().orEmpty()
-                    val localArtist = allTracks.filter { it.artistName.equals(artistName, ignoreCase = true) }
-                    val online = if (localArtist.size < 6) {
-                        musicRepository.searchTracks(artistName).getOrNull().orEmpty()
-                    } else emptyList()
-                    val combined: List<Track> = (localArtist + online)
+                    val localArtist = allTracks.filter {
+                        it.artistName.contains(artistName, ignoreCase = true) && !it.artworkUrl.isNullOrBlank()
+                    }
+                    if (localArtist.isNotEmpty()) {
+                        emit(localArtist.distinctBy { it.id }.take(15))
+                    }
+                    val online = musicRepository.searchTracks(artistName).getOrNull().orEmpty()
+                        .filter { it.artistName.contains(artistName, ignoreCase = true) || artistName.contains(it.artistName, ignoreCase = true) }
+                    val combined: List<Track> = (online + localArtist)
                         .filter { !it.artworkUrl.isNullOrBlank() }
                         .distinctBy { it.id }
-                        .take(12)
+                        .take(18)
                     emit(combined)
                 } else {
                     emit(emptyList())
@@ -166,23 +170,32 @@ class PlayerViewModel @Inject constructor(
 
     val similarTracks: StateFlow<List<Track>> = playbackState
         .map { it.currentTrack }
-        .distinctUntilChanged()
+        .distinctUntilChanged { old, new -> old?.id == new?.id }
         .flatMapLatest { track: Track? ->
             flow<List<Track>> {
                 if (track != null) {
-                    val allTracks = musicRepository.getAllTracks().firstOrNull().orEmpty()
-                    val related = allTracks.filter { 
-                        it.artistName != track.artistName && 
-                        !it.artworkUrl.isNullOrBlank()
+                    // 1. Radio inteligente RDAMVM de YouTube Music para obtener canciones del mismo género y atmósfera exacta
+                    val smartRadio = musicRepository.getContinuousRadioTracks(
+                        seedTrack = track,
+                        excludedTrackIds = setOf(track.id)
+                    ).getOrNull().orEmpty()
+
+                    // Filtrar canciones de artistas similares del mismo género (priorizando otros artistas afines)
+                    val diffArtistRadio = smartRadio.filter {
+                        !it.artistName.equals(track.artistName, ignoreCase = true) && !it.artworkUrl.isNullOrBlank()
                     }
-                    val online = if (related.size < 6) {
-                        musicRepository.searchTracks("${track.artistName} mix").getOrNull().orEmpty()
-                    } else emptyList()
-                    val combined: List<Track> = (related + online)
-                        .filter { it.artistName != track.artistName && !it.artworkUrl.isNullOrBlank() }
+
+                    val fallbackMix = if (diffArtistRadio.size < 6) {
+                        musicRepository.searchTracks("${track.artistName} ${track.title} mix").getOrNull().orEmpty()
+                            .filter { !it.artistName.equals(track.artistName, ignoreCase = true) && !it.artworkUrl.isNullOrBlank() }
+                    } else {
+                        emptyList()
+                    }
+
+                    val combined: List<Track> = (diffArtistRadio + fallbackMix + smartRadio)
+                        .filter { it.id != track.id && !it.artworkUrl.isNullOrBlank() }
                         .distinctBy { it.id }
-                        .shuffled()
-                        .take(12)
+                        .take(14)
                     emit(combined)
                 } else {
                     emit(emptyList())

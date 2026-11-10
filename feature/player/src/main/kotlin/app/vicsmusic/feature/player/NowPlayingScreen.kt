@@ -208,12 +208,14 @@ fun NowPlayingScreen(
     var showSleepTimerSheet by remember { mutableStateOf(false) }
     var showEqualizerSheet by remember { mutableStateOf(false) }
     var showSpeedSheet by remember { mutableStateOf(false) }
+    var showArtistExplorerSheet by remember { mutableStateOf(false) }
     val isCanvasAllowed = remember(canvasDataMode) {
         CanvasPreferences.shouldPlayCanvas(context, canvasDataMode)
     }
 
     BackHandler(enabled = true) {
         when {
+            showArtistExplorerSheet -> showArtistExplorerSheet = false
             showFullScreenLyrics -> showFullScreenLyrics = false
             showTranslationSheet -> showTranslationSheet = false
             showCanvasModeSheet -> showCanvasModeSheet = false
@@ -971,12 +973,7 @@ fun NowPlayingScreen(
 
                         // Button: Explorar [Nombre del artista]
                         Button(
-                            onClick = {
-                                val targetTrack = artistTracks.firstOrNull { it.id != track?.id } ?: track
-                                if (targetTrack != null) {
-                                    onTrackClick(targetTrack)
-                                }
-                            },
+                            onClick = { showArtistExplorerSheet = true },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF1DB954),
                                 contentColor = Color.Black
@@ -1007,19 +1004,36 @@ fun NowPlayingScreen(
                 Spacer(modifier = Modifier.height(28.dp))
 
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Canciones de ${artistBio.artistName}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Canciones de ${artistBio.artistName}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "Ver todo",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1DB954),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showArtistExplorerSheet = true }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(artistTracks, key = { "art_${it.id}" }) { artistTrack ->
+                        items(artistTracks.distinctBy { it.id }, key = { "art_${it.id}" }) { artistTrack ->
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
                                 shape = RoundedCornerShape(12.dp),
@@ -1078,7 +1092,7 @@ fun NowPlayingScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(similarTracks, key = { "sim_${it.id}" }) { simTrack ->
+                        items(similarTracks.distinctBy { it.id }, key = { "sim_${it.id}" }) { simTrack ->
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
                                 shape = RoundedCornerShape(12.dp),
@@ -1120,6 +1134,361 @@ fun NowPlayingScreen(
             }
 
             Spacer(modifier = Modifier.height(40.dp))
+        }
+    }
+
+    // Artist Explorer Full Catalog Modal Sheet (Spotify / YouTube Music Artist Profile)
+    if (showArtistExplorerSheet) {
+        val artistSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val explorerBio = remember(track?.artistName, track?.artworkUrl) {
+            ArtistBioProvider.getArtistInfo(track?.artistName, track?.artworkUrl)
+        }
+        val cleanArtistTracks = remember(artistTracks, track) {
+            (artistTracks + listOfNotNull(track)).distinctBy { it.id }
+        }
+        val artistAlbums = remember(cleanArtistTracks) {
+            cleanArtistTracks
+                .groupBy { it.albumName?.takeIf { a -> a.isNotBlank() } ?: "${it.title} (Sencillo)" }
+                .entries
+                .map { (albumTitle, tracksInAlbum) ->
+                    Triple(albumTitle, tracksInAlbum.firstNotNullOfOrNull { it.artworkUrl }, tracksInAlbum)
+                }
+        }
+        var isFollowingInSheet by remember(track?.artistName) { mutableStateOf(false) }
+
+        ModalBottomSheet(
+            onDismissRequest = { showArtistExplorerSheet = false },
+            sheetState = artistSheetState,
+            containerColor = Color(0xFF121212),
+            dragHandle = null
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF121212))
+                    .padding(bottom = 32.dp)
+            ) {
+                item(key = "artist_explorer_hero") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                    ) {
+                        ArtworkImage(
+                            artworkUrl = explorerBio.bannerUrl ?: cleanArtistTracks.firstOrNull()?.artworkUrl,
+                            contentDescription = explorerBio.artistName,
+                            size = 420.dp,
+                            cornerRadius = 0.dp,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Black.copy(alpha = 0.35f),
+                                            Color(0xFF121212).copy(alpha = 0.75f),
+                                            Color(0xFF121212)
+                                        )
+                                    )
+                                )
+                        )
+
+                        IconButton(
+                            onClick = { showArtistExplorerSheet = false },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cerrar perfil de artista",
+                                tint = Color.White
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Artista verificado",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF38BDF8).copy(alpha = 0.2f))
+                                        .padding(2.dp)
+                                )
+                                Text(
+                                    text = "ARTISTA VERIFICADO • ${explorerBio.origin.uppercase()}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = explorerBio.artistName,
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${explorerBio.monthlyListeners} • ${explorerBio.genres.firstOrNull() ?: "Música"}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+
+                item(key = "artist_explorer_actions") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (isFollowingInSheet) Color.White.copy(alpha = 0.2f) else Color.White)
+                                .clickable { isFollowingInSheet = !isFollowingInSheet }
+                                .padding(horizontal = 20.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = if (isFollowingInSheet) "Siguiendo" else "Seguir artista",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isFollowingInSheet) Color.White else Color.Black
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val target = cleanArtistTracks.shuffled().firstOrNull()
+                                    if (target != null) {
+                                        onTrackClick(target)
+                                        showArtistExplorerSheet = false
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF242424))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Aleatorio",
+                                    tint = Color.White
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    val first = cleanArtistTracks.firstOrNull()
+                                    if (first != null) {
+                                        onTrackClick(first)
+                                        showArtistExplorerSheet = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1DB954),
+                                    contentColor = Color.Black
+                                ),
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Reproducir",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Discography / Albums Horizontal Section
+                if (artistAlbums.isNotEmpty()) {
+                    item(key = "artist_explorer_albums_header") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text = "Álbumes y discografía",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(artistAlbums, key = { "alb_${it.first}" }) { (albumTitle, coverUrl, albumTracks) ->
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier
+                                            .width(148.dp)
+                                            .clickable {
+                                                val firstAlbumTrack = albumTracks.firstOrNull()
+                                                if (firstAlbumTrack != null) {
+                                                    onTrackClick(firstAlbumTrack)
+                                                    showArtistExplorerSheet = false
+                                                }
+                                            }
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            ArtworkImage(
+                                                artworkUrl = coverUrl,
+                                                contentDescription = albumTitle,
+                                                size = 128.dp,
+                                                cornerRadius = 10.dp
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = albumTitle,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "Álbum • ${albumTracks.size} tema(s)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFF1DB954),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Full Numbered Song Catalog of Artist
+                item(key = "artist_explorer_tracks_header") {
+                    Text(
+                        text = "Canciones populares (${cleanArtistTracks.size})",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                    )
+                }
+
+                itemsIndexed(
+                    items = cleanArtistTracks,
+                    key = { idx, item -> "exp_trk_${item.id}_$idx" }
+                ) { index, artistTrack ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onTrackClick(artistTrack)
+                                showArtistExplorerSheet = false
+                            }
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${index + 1}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (artistTrack.id == track?.id) Color(0xFF1DB954) else Color.Gray,
+                            modifier = Modifier.width(28.dp)
+                        )
+                        ArtworkImage(
+                            artworkUrl = artistTrack.artworkUrl,
+                            contentDescription = artistTrack.title,
+                            size = 50.dp,
+                            cornerRadius = 8.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = artistTrack.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (artistTrack.id == track?.id) Color(0xFF1DB954) else Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = artistTrack.albumName?.takeIf { it.isNotBlank() } ?: explorerBio.artistName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.65f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = { onDownloadClick(artistTrack) }) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Descargar",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Biography Card inside Artist Explorer
+                item(key = "artist_explorer_bio_section") {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Biografía e información",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = explorerBio.bio,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -36,12 +36,12 @@ import javax.inject.Singleton
  */
 object InnerTubeSearchParams {
     const val ALL = "" // Devuelve Top Result (musicCardShelfRenderer) + Canciones + Artistas + Álbumes
-    const val SONGS = "EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQ"
-    const val VIDEOS = "EgWKAQIQAWoQEAMQBBAJEAoQBRAREBAQ"
-    const val ALBUMS = "EgWKAQIYAWoQEAMQBBAJEAoQBRAREBAQ"
-    const val ARTISTS = "EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQ"
-    const val COMMUNITY_PLAYLISTS = "EgeKAQQoAEABahAQAxAEEAkQChAFEBEQEBA%3D"
-    const val FEATURED_PLAYLISTS = "EgeKAQQoADgBahAQAxAEEAkQChAFEBEQEBA%3D"
+    const val SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="
+    const val VIDEOS = "EgWKAQIQAWoKEAkQBRAKEAMQBA=="
+    const val ALBUMS = "EgWKAQIYAWoKEAkQBRAKEAMQBA=="
+    const val ARTISTS = "EgWKAQIgAWoKEAkQBRAKEAMQBA=="
+    const val COMMUNITY_PLAYLISTS = "EgeKAQQoAEABagoQAxAEEAkQBRAK"
+    const val FEATURED_PLAYLISTS = "EgeKAQQoADgBagoQAxAEEAkQBRAK"
 }
 
 /**
@@ -159,23 +159,38 @@ class InnerTubeSmartSearchAndRadio @Inject constructor(
         runCatching {
             coroutineScope {
                 val generalDeferred = async {
-                    innerTubeClient.search(
-                        query = clean,
-                        params = InnerTubeSearchParams.ALL
-                    )
+                    runCatching {
+                        innerTubeClient.search(
+                            query = clean,
+                            params = InnerTubeSearchParams.ALL
+                        )
+                    }.getOrNull()
                 }
                 val songsDeferred = async {
-                    innerTubeClient.search(
-                        query = clean,
-                        params = InnerTubeSearchParams.SONGS
-                    )
+                    runCatching {
+                        innerTubeClient.search(
+                            query = clean,
+                            params = InnerTubeSearchParams.SONGS
+                        )
+                    }.getOrNull()
+                }
+                val artistsDeferred = async {
+                    runCatching {
+                        innerTubeClient.search(
+                            query = clean,
+                            params = InnerTubeSearchParams.ARTISTS
+                        )
+                    }.getOrNull()
                 }
 
                 val generalJson = generalDeferred.await()
                 val songsJson = songsDeferred.await()
+                val artistsJson = artistsDeferred.await()
 
-                val parsedGeneral = parseGeneralSearchResponse(generalJson)
-                val dedicatedSongs = parseSongsFromSearchResponse(songsJson)
+                val parsedGeneral = generalJson?.let { parseGeneralSearchResponse(it) }
+                    ?: FullInnerTubeSearchResponse(null, null, emptyList(), emptyList(), emptyList())
+                val dedicatedSongs = songsJson?.let { parseSongsFromSearchResponse(it) }.orEmpty()
+                val dedicatedArtists = artistsJson?.let { parseGeneralSearchResponse(it).artists }.orEmpty()
 
                 val allSongs = buildList {
                     parsedGeneral.topResultTrack?.let { add(it) }
@@ -183,12 +198,18 @@ class InnerTubeSmartSearchAndRadio @Inject constructor(
                     addAll(parsedGeneral.songs)
                 }.distinctBy { it.id }
 
+                val allArtists = buildList {
+                    parsedGeneral.topResultArtist?.let { add(it) }
+                    addAll(dedicatedArtists)
+                    addAll(parsedGeneral.artists)
+                }.distinctBy { it.id }
+
                 FullInnerTubeSearchResponse(
                     topResultTrack = parsedGeneral.topResultTrack ?: allSongs.firstOrNull(),
-                    topResultArtist = parsedGeneral.topResultArtist,
+                    topResultArtist = parsedGeneral.topResultArtist ?: allArtists.firstOrNull(),
                     songs = allSongs,
-                    artists = parsedGeneral.artists,
-                    playlists = parsedGeneral.playlists
+                    artists = allArtists,
+                    playlists = parsedGeneral.playlists.distinctBy { it.id }
                 )
             }
         }
@@ -381,8 +402,10 @@ class InnerTubeSmartSearchAndRadio @Inject constructor(
                 }
             }
 
-            // 2. Estantes de resultados (Canciones, Artistas, Playlists)
-            val shelfItems = secObj.obj("musicShelfRenderer")?.arr("contents") ?: continue
+            // 2. Estantes de resultados (Canciones, Artistas, Playlists) en musicShelfRenderer o itemSectionRenderer
+            val shelfItems = secObj.obj("musicShelfRenderer")?.arr("contents")
+                ?: secObj.obj("itemSectionRenderer")?.arr("contents")
+                ?: continue
             for (item in shelfItems) {
                 val renderer = item.jsonObject.obj("musicResponsiveListItemRenderer") ?: continue
                 val track = parseResponsiveTrackItem(renderer)
@@ -392,16 +415,21 @@ class InnerTubeSmartSearchAndRadio @Inject constructor(
                 }
 
                 // Si no tiene videoId, verificar si es un Artista o una Playlist con browseId
-                val browseId = renderer.obj("navigationEndpoint", "browseEndpoint")?.str("browseId") ?: continue
+                val browseId = renderer.obj("navigationEndpoint", "browseEndpoint")?.str("browseId")
+                    ?: renderer.arr("flexColumns")?.firstOrNull()?.jsonObject
+                        ?.obj("musicResponsiveListItemFlexColumnRenderer", "text")?.arr("runs")
+                        ?.firstOrNull()?.jsonObject?.obj("navigationEndpoint", "browseEndpoint")?.str("browseId")
+                    ?: continue
                 val flexCols = renderer.arr("flexColumns") ?: continue
                 val primaryText = flexCols.getOrNull(0)?.jsonObject
                     ?.obj("musicResponsiveListItemFlexColumnRenderer", "text")?.runsText().orEmpty()
                 val secondaryText = flexCols.getOrNull(1)?.jsonObject
                     ?.obj("musicResponsiveListItemFlexColumnRenderer", "text")?.runsText().orEmpty()
-                val thumb = renderer.obj("thumbnail", "musicThumbnailRenderer", "thumbnail")
+                val rawThumb = renderer.obj("thumbnail", "musicThumbnailRenderer", "thumbnail")
                     ?.arr("thumbnails")?.lastOrNull()?.jsonObject?.str("url").orEmpty()
+                val thumb = rawThumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")
 
-                if (browseId.startsWith("UC") || secondaryText.contains("Artista", ignoreCase = true) || secondaryText.contains("suscriptores", ignoreCase = true)) {
+                if (browseId.startsWith("UC") || browseId.startsWith("MPLA") || secondaryText.contains("Artista", ignoreCase = true) || secondaryText.contains("suscriptores", ignoreCase = true)) {
                     artists.add(
                         Artist(
                             id = browseId,
@@ -412,7 +440,7 @@ class InnerTubeSmartSearchAndRadio @Inject constructor(
                             topTracks = emptyList()
                         )
                     )
-                } else if (browseId.startsWith("VL") || browseId.startsWith("PL") || browseId.startsWith("RD")) {
+                } else if (browseId.startsWith("VL") || browseId.startsWith("PL") || browseId.startsWith("RD") || browseId.startsWith("MPRE")) {
                     playlists.add(
                         Playlist(
                             id = browseId,

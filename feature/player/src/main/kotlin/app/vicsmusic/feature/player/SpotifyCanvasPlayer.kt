@@ -33,12 +33,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 
 /**
  * Modos de ahorro de datos y batería para Spotify Canvas.
@@ -119,47 +123,57 @@ fun SpotifyCanvasContainer(
 
     var isVideoReady by remember(canvasVideoUrl) { mutableStateOf(false) }
 
-    // Instancia liviana de ExoPlayer dedicada exclusivamente al Canvas
+    // Instancia liviana de ExoPlayer dedicada exclusivamente al Canvas con User-Agent oficial de Android YouTube
     val canvasPlayer = remember(canvasVideoUrl, isCanvasEnabledInSettings) {
         if (!canvasVideoUrl.isNullOrBlank() && isCanvasEnabledInSettings) {
-            ExoPlayer.Builder(context).build().apply {
-                repeatMode = Player.REPEAT_MODE_ONE
-                volume = 0f // Mute absoluto
-                // Optimización clave: Desactivar completamente el decodificador de audio y limitar resolución a 480p/30fps
-                trackSelectionParameters = trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                    .setMaxVideoSize(854, 480)
-                    .setMaxVideoFrameRate(30)
-                    .build()
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("com.google.android.youtube/20.10.38 (Linux; U; Android 13; en_US)")
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(10_000)
+                .setReadTimeoutMs(10_000)
 
-                val mediaItem = if (canvasVideoUrl.contains("googlevideo.com")) {
-                    // Recortar bucle visual de 7 segundos (0:25 a 0:32) del video oficial
-                    MediaItem.Builder()
-                        .setUri(canvasVideoUrl)
-                        .setClippingConfiguration(
-                            MediaItem.ClippingConfiguration.Builder()
-                                .setStartPositionMs(25_000L)
-                                .setEndPositionMs(32_000L)
-                                .build()
-                        )
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
+                .build()
+                .apply {
+                    repeatMode = Player.REPEAT_MODE_ONE
+                    volume = 0f // Mute absoluto
+                    // Optimización clave: Desactivar completamente el decodificador de audio y limitar resolución a 480p/30fps
+                    trackSelectionParameters = trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                        .setMaxVideoSize(854, 480)
+                        .setMaxVideoFrameRate(30)
                         .build()
-                } else {
-                    MediaItem.fromUri(canvasVideoUrl)
-                }
 
-                setMediaItem(mediaItem)
-                prepare()
-                playWhenReady = isNowPlayingExpanded
-            }
+                    setMediaItem(MediaItem.fromUri(canvasVideoUrl))
+                    prepare()
+                    playWhenReady = isNowPlayingExpanded
+                }
         } else null
     }
 
-    // Listener para mostrar el video únicamente cuando el primer frame esté listo
+    // Listener para mostrar el video únicamente cuando el primer frame esté listo y posicionar en una escena dinámica
     DisposableEffect(canvasPlayer) {
+        var didInitialSeek = false
         val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && !didInitialSeek) {
+                    val dur = canvasPlayer?.duration ?: 0L
+                    if (dur > 40_000L) {
+                        didInitialSeek = true
+                        canvasPlayer?.seekTo(22_000L)
+                    }
+                }
+            }
+
             override fun onRenderedFirstFrame() {
                 isVideoReady = true
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.w("SpotifyCanvasPlayer", "Error reproduciendo Canvas: ${error.message}")
+                isVideoReady = false
             }
         }
         canvasPlayer?.addListener(listener)
@@ -167,6 +181,18 @@ fun SpotifyCanvasContainer(
             isVideoReady = false
             canvasPlayer?.removeListener(listener)
             canvasPlayer?.release()
+        }
+    }
+
+    // Bucle visual de 8 segundos (22s -> 30s) para videos musicales largos sin usar ClippingMediaSource que falla en HTTP
+    LaunchedEffect(canvasPlayer, isVideoReady, isNowPlayingExpanded) {
+        while (canvasPlayer != null && isVideoReady && isNowPlayingExpanded) {
+            val dur = canvasPlayer.duration
+            val pos = canvasPlayer.currentPosition
+            if (dur > 40_000L && pos >= 30_000L) {
+                canvasPlayer.seekTo(22_000L)
+            }
+            delay(400L)
         }
     }
 

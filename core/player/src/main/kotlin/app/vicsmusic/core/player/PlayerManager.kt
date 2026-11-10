@@ -724,14 +724,14 @@ class PlayerManager @Inject constructor(
             val segments = sponsorBlockManager.getMusicOfftopicSegments(videoId)
             currentSkipSegments = segments
             if (segments.isNotEmpty() && currentSponsorBlockTrackId == track.id) {
-                val currentPos = exoPlayer.currentPosition
-                for (seg in segments) {
-                    if (currentPos in seg.startMs until (seg.endMs - 150L)) {
-                        android.util.Log.i("PlayerManager", "SponsorBlock: Saltando intro de inicio (${seg.startMs}ms -> ${seg.endMs}ms)")
-                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    val currentPos = exoPlayer.currentPosition
+                    for (seg in segments) {
+                        if (currentPos in seg.startMs until (seg.endMs - 150L)) {
+                            android.util.Log.i("PlayerManager", "SponsorBlock: Saltando intro de inicio (${seg.startMs}ms -> ${seg.endMs}ms)")
                             exoPlayer.seekTo(seg.endMs + 50L)
+                            break
                         }
-                        break
                     }
                 }
             }

@@ -11,12 +11,49 @@
       ]
     },
     {
+      "id": "spotify-web",
+      "name": "Spotify Web (Metadatos & Portadas Oficiales)",
+      "file": "spotify-web.json",
+      "status": "verificado",
+      "types": [
+        "music",
+        "metadata"
+      ]
+    },
+    {
+      "id": "jiosaavn",
+      "name": "JioSaavn (Audio 320 kbps)",
+      "file": "jiosaavn.json",
+      "status": "verificado",
+      "types": [
+        "music"
+      ]
+    },
+    {
+      "id": "piped-music",
+      "name": "Piped Music (YouTube Descentralizado)",
+      "file": "piped-music.json",
+      "status": "verificado",
+      "types": [
+        "music"
+      ]
+    },
+    {
       "id": "soundcloud",
       "name": "SoundCloud",
       "file": "soundcloud.json",
       "status": "verificado",
       "types": [
         "music"
+      ]
+    },
+    {
+      "id": "podcasts-apple",
+      "name": "Apple Podcasts (Episodios Completos)",
+      "file": "podcasts-apple.json",
+      "status": "verificado",
+      "types": [
+        "podcast"
       ]
     },
     {

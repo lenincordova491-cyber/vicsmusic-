@@ -1,0 +1,64 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "podcasts-apple",
+  "name": "Apple Podcasts (Episodios Completos)",
+  "version": "1.3.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "activo",
+  "legal": {
+    "license": "iTunes Podcasts Public Index",
+    "notice": "Búsqueda y reproducción de episodios completos en MP3 de podcasts de todo el mundo sin cortes.",
+    "docs": "https://developer.apple.com"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://itunes.apple.com",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "timeoutMs": 10000,
+    "maxBytes": 3145728
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/search",
+      "query": {
+        "term": "{{query}}",
+        "media": "podcast",
+        "entity": "podcastEpisode",
+        "limit": "{{limit}}"
+      },
+      "response": {
+        "itemsPath": "$.results",
+        "map": {
+          "id": "$.trackId",
+          "title": "$.trackName",
+          "artist": "$.collectionName",
+          "album": "Podcast",
+          "durationMs": "$.trackTimeMillis",
+          "artworkUrl": {
+            "path": "$.artworkUrl100",
+            "replace": [
+              "100x100",
+              "600x600"
+            ]
+          },
+          "streamUrl": "$.episodeUrl",
+          "previewOnly": false
+        }
+      }
+    }
+  }
+}

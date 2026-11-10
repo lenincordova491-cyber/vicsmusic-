@@ -1,0 +1,100 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "piped-music",
+  "name": "Piped Music (YouTube Descentralizado)",
+  "version": "1.4.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "activo",
+  "legal": {
+    "license": "Instancia Piped Libre",
+    "notice": "Respaldo descentralizado de YouTube Music sin bloqueo de IP ni censura de región.",
+    "docs": "https://docs.piped.video"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://pipedapi.kavin.rocks",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "timeoutMs": 10000,
+    "maxBytes": 4194304
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "token",
+    "pageSize": 20
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/search",
+      "query": {
+        "q": "{{query}}",
+        "filter": "music_songs"
+      },
+      "response": {
+        "itemsPath": "$.items",
+        "map": {
+          "id": {
+            "path": "$.url",
+            "replace": [
+              "/watch?v=",
+              ""
+            ]
+          },
+          "title": "$.title",
+          "artist": "$.uploaderName",
+          "album": "Música",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.thumbnail",
+          "streamUrl": {
+            "template": "https://pipedapi.kavin.rocks/streams/{{id}}"
+          },
+          "previewOnly": false
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/trending",
+      "query": {
+        "region": "PE"
+      },
+      "sectionTitle": "Tendencias en Perú (Piped)",
+      "response": {
+        "itemsPath": "$",
+        "map": {
+          "id": {
+            "path": "$.url",
+            "replace": [
+              "/watch?v=",
+              ""
+            ]
+          },
+          "title": "$.title",
+          "artist": "$.uploaderName",
+          "album": "Tendencias",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.thumbnail",
+          "streamUrl": {
+            "template": "https://pipedapi.kavin.rocks/streams/{{id}}"
+          },
+          "previewOnly": false
+        }
+      }
+    }
+  }
+}

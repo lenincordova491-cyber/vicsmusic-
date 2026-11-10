@@ -1,0 +1,58 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "spotify-web",
+  "name": "Spotify Web (Metadatos & Portadas Oficiales)",
+  "version": "1.10.6",
+  "lang": [
+    "multi"
+  ],
+  "status": "activo",
+  "legal": {
+    "license": "Spotify Web API Catalog",
+    "notice": "Búsqueda completa de álbumes, playlists oficiales y carátulas de alta resolución en Spotify.",
+    "docs": "https://developer.spotify.com/documentation/web-api"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://api.spotify.com/v1",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "timeoutMs": 10000,
+    "maxBytes": 3145728
+  },
+  "capabilities": [
+    "SEARCH",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/search",
+      "query": {
+        "q": "{{query}}",
+        "type": "track",
+        "limit": "{{limit}}",
+        "offset": "{{offset}}"
+      },
+      "response": {
+        "itemsPath": "$.tracks.items",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.artists[0].name",
+          "album": "$.album.name",
+          "durationMs": "$.duration_ms",
+          "artworkUrl": "$.album.images[0].url",
+          "streamUrl": "vicsmusic://track/sp_{{id}}",
+          "previewOnly": false
+        }
+      }
+    }
+  }
+}

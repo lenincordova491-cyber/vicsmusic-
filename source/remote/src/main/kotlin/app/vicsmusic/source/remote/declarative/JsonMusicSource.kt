@@ -133,6 +133,22 @@ class JsonMusicSource(
         runCatching {
             val cachedUrl = streamUrlCache[id]
             if (!cachedUrl.isNullOrBlank()) {
+                if (cachedUrl.startsWith("vicsmusic://")) {
+                    throw UnsupportedOperationException("Virtual metadata URI requires fallback resolution: $cachedUrl")
+                }
+                if (definition.id == "piped-music" && cachedUrl.contains("/streams/")) {
+                    val jsonText = executeGet(cachedUrl)
+                    val root = json.parseToJsonElement(jsonText)
+                    val directAudioUrl = JsonPathEvaluator.extractString(root, "$.audioStreams[0].url")
+                        ?: throw IllegalStateException("No audioStreams found in Piped response for $id")
+                    streamUrlCache[id] = directAudioUrl
+                    return@runCatching StreamInfo(
+                        trackId = id,
+                        url = directAudioUrl,
+                        mimeType = "audio/mp4",
+                        bitrateKbps = 160
+                    )
+                }
                 return@runCatching StreamInfo(
                     trackId = id,
                     url = cachedUrl,
@@ -229,12 +245,13 @@ class JsonMusicSource(
 
     private fun mapItemToTrack(item: JsonElement, mapConfig: JsonObject): Track? {
         val rawId = extractField(item, mapConfig["id"]) ?: return null
-        val title = extractField(item, mapConfig["title"]) ?: "Sin título"
-        val artist = extractField(item, mapConfig["artist"]) ?: definition.name
-        val album = extractField(item, mapConfig["album"])
+        val itemParams = mapOf("id" to rawId)
+        val title = extractField(item, mapConfig["title"], itemParams) ?: "Sin título"
+        val artist = extractField(item, mapConfig["artist"], itemParams) ?: definition.name
+        val album = extractField(item, mapConfig["album"], itemParams)
         val durationMs = extractLongField(item, mapConfig["durationMs"]) ?: 180000L
-        val artworkUrl = extractField(item, mapConfig["artworkUrl"])
-        val streamUrl = extractField(item, mapConfig["streamUrl"])
+        val artworkUrl = extractField(item, mapConfig["artworkUrl"], itemParams)
+        val streamUrl = extractField(item, mapConfig["streamUrl"], itemParams)
 
         val trackId = "${definition.id}_$rawId"
 
@@ -255,12 +272,20 @@ class JsonMusicSource(
         )
     }
 
-    private fun extractField(item: JsonElement, mapping: JsonElement?): String? {
+    private fun extractField(
+        item: JsonElement,
+        mapping: JsonElement?,
+        extraParams: Map<String, String> = emptyMap()
+    ): String? {
         if (mapping == null) return null
         return when (mapping) {
             is kotlinx.serialization.json.JsonPrimitive -> {
-                val path = mapping.contentOrNull ?: return null
-                JsonPathEvaluator.extractString(item, path)
+                val raw = mapping.contentOrNull ?: return null
+                when {
+                    raw.startsWith("$") -> JsonPathEvaluator.extractString(item, raw)
+                    raw.contains("{{") -> TemplateEngine.resolve(raw, extraParams, itemContext = item)
+                    else -> raw
+                }
             }
             is JsonObject -> {
                 val path = mapping["path"]?.jsonPrimitive?.contentOrNull
@@ -268,7 +293,7 @@ class JsonMusicSource(
                 val replaceArr = mapping["replace"]
 
                 if (template != null) {
-                    TemplateEngine.resolve(template, emptyMap(), itemContext = item)
+                    TemplateEngine.resolve(template, extraParams, itemContext = item)
                 } else if (path != null) {
                     var value = JsonPathEvaluator.extractString(item, path)
                     if (value != null && replaceArr is JsonArray && replaceArr.size == 2) {

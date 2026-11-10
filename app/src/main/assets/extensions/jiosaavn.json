@@ -1,0 +1,85 @@
+{
+  "schema": "vicsmusic-extension/1",
+  "official": true,
+  "id": "jiosaavn",
+  "name": "JioSaavn (Audio 320 kbps)",
+  "version": "1.2.0",
+  "lang": [
+    "multi"
+  ],
+  "status": "activo",
+  "legal": {
+    "license": "JioSaavn Public Catalog",
+    "notice": "Búsqueda completa y reproducción directa de catálogo global en alta calidad (hasta 320 kbps AAC/M4A).",
+    "docs": "https://saavn.dev"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "http": {
+    "baseUrl": "https://saavn.dev/api",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "timeoutMs": 12000,
+    "maxBytes": 5242880
+  },
+  "capabilities": [
+    "SEARCH",
+    "STREAM",
+    "BROWSE"
+  ],
+  "paging": {
+    "type": "offset",
+    "pageSize": 25
+  },
+  "endpoints": {
+    "searchTracks": {
+      "method": "GET",
+      "path": "/search/songs",
+      "query": {
+        "query": "{{query}}",
+        "page": "{{page}}",
+        "limit": "{{limit}}"
+      },
+      "response": {
+        "itemsPath": "$.data.results",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.primaryArtists",
+          "album": "$.album.name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.image[2].url",
+          "streamUrl": "$.downloadUrl[4].url",
+          "previewOnly": false
+        }
+      }
+    },
+    "home": {
+      "method": "GET",
+      "path": "/modules",
+      "query": {
+        "language": "spanish,english"
+      },
+      "sectionTitle": "Éxitos Globales JioSaavn",
+      "response": {
+        "itemsPath": "$.data.trending.songs",
+        "map": {
+          "id": "$.id",
+          "title": "$.name",
+          "artist": "$.primaryArtists",
+          "album": "$.album.name",
+          "durationMs": {
+            "path": "$.duration",
+            "mul": 1000
+          },
+          "artworkUrl": "$.image[2].url",
+          "streamUrl": "$.downloadUrl[4].url",
+          "previewOnly": false
+        }
+      }
+    }
+  }
+}

@@ -182,7 +182,8 @@ class MusicRepositoryImpl @Inject constructor(
                 source !is LocalMusicSource &&
                     SourceCapability.SEARCH in source.capabilities &&
                     SourceCapability.STREAM in source.capabilities &&
-                    source.id in setOf("ytmusic", "soundcloud")
+                    source.id !in deprecatedPreviewSources &&
+                    source.id in setOf("ytmusic", "jiosaavn", "piped-music", "soundcloud", "podcasts-apple")
             }
 
             val (remoteDirect, lrclibCandidates, remoteLyricSearch) = coroutineScope {
@@ -418,15 +419,26 @@ class MusicRepositoryImpl @Inject constructor(
                     }
                 }
 
-                // Self-healing fallback: if track is from an external source (Spotify, charts)
-                // or the primary source failed/is unavailable, resolve by title + artist on YouTube Music!
+                // Self-healing fallback: if track is from an external source (Spotify, Piped, charts)
+                // or the primary source failed/is unavailable, resolve by videoId or title + artist on YouTube Music!
+                val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID)
+                if (sourceId == "piped-music" && ytSource != null) {
+                    val rawVideoId = trackId.removePrefix("piped-music_")
+                    if (rawVideoId.isNotBlank()) {
+                        val directYtStream = ytSource.getStream("yt_$rawVideoId", quality).getOrNull()
+                        if (directYtStream != null) {
+                            return@runCatching directYtStream.copy(trackId = trackId)
+                        }
+                    }
+                }
+
                 if (sourceId != "local" && cachedTrack != null && cachedTrack.title.isNotBlank()) {
-                    val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID) ?: source
-                    if (ytSource != null) {
+                    val fallbackEngine = ytSource ?: source
+                    if (fallbackEngine != null) {
                         val query = "${cachedTrack.title} ${cachedTrack.artistName}".trim()
-                        val candidates = ytSource.search(query, SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                        val candidates = fallbackEngine.search(query, SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
                         for (candidate in candidates.take(3)) {
-                            val fallbackStream = ytSource.getStream(candidate.id, quality).getOrNull()
+                            val fallbackStream = fallbackEngine.getStream(candidate.id, quality).getOrNull()
                             if (fallbackStream != null) {
                                 return@runCatching fallbackStream.copy(trackId = trackId)
                             }

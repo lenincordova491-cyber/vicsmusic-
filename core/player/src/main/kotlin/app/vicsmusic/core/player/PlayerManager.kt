@@ -49,13 +49,16 @@ class PlayerManager @Inject constructor(
     val queueManager: QueueManager,
     private val musicRepository: MusicRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val playerCacheManager: PlayerCacheManager
+    private val playerCacheManager: PlayerCacheManager,
+    private val sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
     private var prepareJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var prewarmedTrackId: String? = null
+    private var currentSkipSegments: List<app.vicsmusic.core.player.sponsorblock.SkipSegment> = emptyList()
+    private var currentSponsorBlockTrackId: String? = null
 
     private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
     val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs.asStateFlow()
@@ -186,6 +189,7 @@ class PlayerManager @Inject constructor(
                     durationMs = currentTrack.durationMs,
                     status = if (exoPlayer.isPlaying) PlaybackStatus.PLAYING else PlaybackStatus.BUFFERING
                 )
+                loadSponsorBlockSegments(currentTrack)
                 val remaining = items.size - 1 - currentIdx
                 if (remaining <= 2) {
                     triggerContinuousAutoplay(currentTrack)
@@ -301,6 +305,7 @@ class PlayerManager @Inject constructor(
         player.play()
 
         val currentTrack = tracks[safeIndex]
+        loadSponsorBlockSegments(currentTrack)
         _playbackState.value = _playbackState.value.copy(
             status = PlaybackStatus.BUFFERING,
             currentTrack = currentTrack,
@@ -674,6 +679,40 @@ class PlayerManager @Inject constructor(
         )
     }
 
+    private fun loadSponsorBlockSegments(track: Track) {
+        val videoId = when {
+            track.id.startsWith("yt_") -> track.id.removePrefix("yt_")
+            track.id.startsWith("piped-music_") -> track.id.removePrefix("piped-music_")
+            else -> null
+        }
+        if (videoId.isNullOrBlank()) {
+            currentSkipSegments = emptyList()
+            currentSponsorBlockTrackId = null
+            return
+        }
+        if (currentSponsorBlockTrackId == track.id) return
+
+        currentSponsorBlockTrackId = track.id
+        currentSkipSegments = emptyList()
+
+        scope.launch(Dispatchers.IO) {
+            val segments = sponsorBlockManager.getMusicOfftopicSegments(videoId)
+            currentSkipSegments = segments
+            if (segments.isNotEmpty() && currentSponsorBlockTrackId == track.id) {
+                val currentPos = exoPlayer.currentPosition
+                for (seg in segments) {
+                    if (currentPos in seg.startMs until (seg.endMs - 150L)) {
+                        android.util.Log.i("PlayerManager", "SponsorBlock: Saltando intro de inicio (${seg.startMs}ms -> ${seg.endMs}ms)")
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            exoPlayer.seekTo(seg.endMs + 50L)
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     private fun startProgressTracker() {
         progressJob?.cancel()
         progressJob = scope.launch {
@@ -685,6 +724,18 @@ class PlayerManager @Inject constructor(
                     positionMs = currentPos,
                     durationMs = duration
                 )
+
+                // SponsorBlock: Salto automático de silencios e intros habladas
+                val segments = currentSkipSegments
+                if (segments.isNotEmpty()) {
+                    for (seg in segments) {
+                        if (currentPos in seg.startMs until (seg.endMs - 150L)) {
+                            android.util.Log.i("PlayerManager", "SponsorBlock: Saltando segmento no musical (${seg.startMs}ms -> ${seg.endMs}ms)")
+                            exoPlayer.seekTo(seg.endMs + 50L)
+                            break
+                        }
+                    }
+                }
 
                 // Next Track Pre-warming at 75% duration for instant (<100ms) transition
                 val qState = queueManager.state.value

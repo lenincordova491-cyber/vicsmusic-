@@ -561,6 +561,17 @@ class MusicRepositoryImpl @Inject constructor(
                 onProgress(1.0f)
                 notifyComplete()
 
+                // Inyección de etiquetas ID3v2.4 y carátula embebida en alta resolución
+                runCatching {
+                    app.vicsmusic.core.data.metadata.Id3Tagger.tagMp3(
+                        file = targetFile,
+                        title = track.title,
+                        artist = track.artistName,
+                        album = track.albumName,
+                        artworkUrl = track.artworkUrl
+                    )
+                }
+
                 // Notificar al sistema multimedia de Android para que aparezca en el reproductor nativo y galería
                 MediaScannerConnection.scanFile(
                     context,

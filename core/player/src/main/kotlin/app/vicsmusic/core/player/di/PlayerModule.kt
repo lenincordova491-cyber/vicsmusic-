@@ -42,14 +42,16 @@ object PlayerModule {
         queueManager: QueueManager,
         musicRepository: MusicRepository,
         userPreferencesRepository: UserPreferencesRepository,
-        playerCacheManager: PlayerCacheManager
+        playerCacheManager: PlayerCacheManager,
+        sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager
     ): PlayerManager {
         return PlayerManager(
             context = context,
             queueManager = queueManager,
             musicRepository = musicRepository,
             userPreferencesRepository = userPreferencesRepository,
-            playerCacheManager = playerCacheManager
+            playerCacheManager = playerCacheManager,
+            sponsorBlockManager = sponsorBlockManager
         )
     }
 

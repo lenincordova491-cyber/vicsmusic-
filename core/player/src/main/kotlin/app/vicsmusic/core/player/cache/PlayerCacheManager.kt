@@ -67,7 +67,7 @@ class PlayerCacheManager @Inject constructor(
         musicRepository: MusicRepository,
         qualityProvider: () -> AudioQuality = { AudioQuality.HIGH }
     ): DataSource.Factory {
-        val cacheDataSourceFactory = createCacheDataSourceFactory()
+        val httpFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
 
         val resolver = ResolvingDataSource.Resolver { dataSpec ->
             val uri = dataSpec.uri
@@ -83,14 +83,15 @@ class PlayerCacheManager @Inject constructor(
                     throw IOException("Error resolviendo stream para track $trackId: ${it.message}", it)
                 }
 
-                if (streamInfo.headers.isNotEmpty()) {
-                    updateRequestHeaders(streamInfo.headers)
-                }
-
-                dataSpec.buildUpon()
+                val builder = dataSpec.buildUpon()
                     .setUri(Uri.parse(streamInfo.url))
                     .setKey(trackId)
-                    .build()
+
+                if (streamInfo.headers.isNotEmpty()) {
+                    builder.setHttpRequestHeaders(streamInfo.headers)
+                }
+
+                builder.build()
             } else if (dataSpec.key.isNullOrBlank() && (uriString.contains("googlevideo.com") || uriString.contains("youtube"))) {
                 val videoId = uri.getQueryParameter("id") ?: uri.getQueryParameter("docid")
                 if (!videoId.isNullOrBlank()) {
@@ -103,7 +104,13 @@ class PlayerCacheManager @Inject constructor(
             }
         }
 
-        return ResolvingDataSource.Factory(cacheDataSourceFactory, resolver)
+        val resolvingDataSourceFactory = ResolvingDataSource.Factory(httpFactory, resolver)
+
+        return CacheDataSource.Factory()
+            .setCache(simpleCache)
+            .setUpstreamDataSourceFactory(resolvingDataSourceFactory)
+            .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(simpleCache))
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 
     fun release() {

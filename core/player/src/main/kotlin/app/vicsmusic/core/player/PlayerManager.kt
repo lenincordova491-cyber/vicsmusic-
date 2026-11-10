@@ -24,6 +24,7 @@ import app.vicsmusic.core.model.PlaybackState
 import app.vicsmusic.core.model.PlaybackStatus
 import app.vicsmusic.core.model.RepeatMode
 import app.vicsmusic.core.model.Track
+import app.vicsmusic.core.model.UserPreferences
 import app.vicsmusic.core.player.cache.PlayerCacheManager
 import app.vicsmusic.core.player.queue.QueueManager
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +38,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.util.Random
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -111,11 +111,14 @@ class PlayerManager @Inject constructor(
         }
     }
 
+    @Volatile
+    private var cachedUserPreferences: UserPreferences? = null
+
     private fun createExoPlayer(): ExoPlayer {
         val resolvingDataSourceFactory = playerCacheManager.createResolvingDataSourceFactory(
             musicRepository = musicRepository,
             qualityProvider = {
-                val prefs = runCatching { runBlocking { userPreferencesRepository.userPreferences.first() } }.getOrNull()
+                val prefs = cachedUserPreferences
                 if (prefs != null) {
                     resolveNetworkQuality(prefs.wifiQuality, prefs.cellularQuality)
                 } else {
@@ -218,6 +221,11 @@ class PlayerManager @Inject constructor(
     }
 
     init {
+        scope.launch {
+            userPreferencesRepository.userPreferences.collect { prefs ->
+                cachedUserPreferences = prefs
+            }
+        }
         scope.launch {
             queueManager.state.collect { qState ->
                 _playbackState.value = _playbackState.value.copy(

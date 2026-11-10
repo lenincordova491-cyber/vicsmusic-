@@ -105,7 +105,11 @@ class AudioFocusManager(
     private fun registerBecomingNoisy() {
         if (!isBecomingNoisyRegistered) {
             val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-            context.registerReceiver(becomingNoisyReceiver, filter)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(becomingNoisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(becomingNoisyReceiver, filter)
+            }
             isBecomingNoisyRegistered = true
         }
     }

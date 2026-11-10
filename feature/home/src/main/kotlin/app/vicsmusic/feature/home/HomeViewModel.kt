@@ -31,13 +31,7 @@ enum class HomeCategoryFilter {
     DOWNLOADS
 }
 
-data class HomeChart(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val emoji: String,
-    val tracks: List<Track>
-)
+typealias HomeChart = app.vicsmusic.core.model.Chart
 
 data class HomeUiState(
     val isLoading: Boolean = true,
@@ -279,7 +273,7 @@ class HomeViewModel @Inject constructor(
                     quickAccessTracks = quickAccess,
                     featuredRelease = hero,
                     favoriteArtists = mergedArtists,
-                    topCharts = TOP_CHARTS,
+                    topCharts = if (_uiState.value.topCharts.any { it.tracks.isNotEmpty() && !it.coverUrl.isNullOrBlank() }) _uiState.value.topCharts else TOP_CHARTS,
                     dailyMix = (likedTracks + recommendations.dailyMix.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.drop(1)).distinctBy { it.id }.take(14),
                     recommendedTracks = (cleanRecents + recommendations.recommendedForYou.filter { !it.artworkUrl.isNullOrBlank() } + prioritized.reversed()).distinctBy { it.id }.take(14),
                     trendingTracks = currentTrending,
@@ -313,6 +307,15 @@ class HomeViewModel @Inject constructor(
                 musicRepository.updateYouTubeSession(prefs.ytmCookieHeader, prefs.ytmVisitorData)
             }
             runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
+
+            // Carga en segundo plano de rankings reales y portadas en tiempo real
+            launch {
+                val liveCharts = musicRepository.getTopCharts().getOrNull()
+                if (!liveCharts.isNullOrEmpty()) {
+                    _uiState.update { it.copy(topCharts = liveCharts) }
+                }
+            }
+
             if (prefs.favoriteArtistIds.isNotEmpty()) {
                 for (artist in prefs.favoriteArtistIds.take(3)) {
                     musicRepository.searchTracks(artist)
@@ -377,6 +380,13 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
             runCatching { musicRepository.syncAuthenticatedHistoryAndLikes() }
+
+            // Refrescar rankings y Top 50 en tiempo real
+            val liveCharts = musicRepository.getTopCharts().getOrNull()
+            if (!liveCharts.isNullOrEmpty()) {
+                _uiState.update { it.copy(topCharts = liveCharts) }
+            }
+
             val onlineQueries = listOf(
                 "Top 50 Peru",
                 "Virales Peru 2026",
@@ -1447,35 +1457,40 @@ class HomeViewModel @Inject constructor(
                 title = "Top 50 - Perú",
                 subtitle = "Tu actualización diaria de las canciones más sonadas en Perú",
                 emoji = "🇵🇪",
-                tracks = (CUMBIA_TRACKS + CANSERBERO_TRACKS + URBAN_TRACKS).shuffled()
+                tracks = (CUMBIA_TRACKS + CANSERBERO_TRACKS + URBAN_TRACKS).shuffled(),
+                coverUrl = "https://charts-images.scdn.co/assets/locale_en/regional/daily/region_pe_default.jpg"
             ),
             HomeChart(
                 id = "top_50_global",
                 title = "Top 50 - Global",
                 subtitle = "Las canciones más escuchadas en el mundo ahora mismo",
                 emoji = "🌍",
-                tracks = (ROCK_POP_TRACKS + URBAN_TRACKS + CANSERBERO_TRACKS).shuffled()
-            ),
-            HomeChart(
-                id = "virales_peru",
-                title = "Virales Perú",
-                subtitle = "Tendencias en redes sociales y streaming en el país",
-                emoji = "🔥",
-                tracks = (CUMBIA_TRACKS + URBAN_TRACKS).shuffled()
+                tracks = (ROCK_POP_TRACKS + URBAN_TRACKS + CANSERBERO_TRACKS).shuffled(),
+                coverUrl = "https://charts-images.scdn.co/assets/locale_en/regional/daily/region_global_default.jpg"
             ),
             HomeChart(
                 id = "viva_latino",
                 title = "Viva Latino",
                 subtitle = "El epicentro del ritmo y los mayores hits de la música latina",
                 emoji = "✨",
-                tracks = (URBAN_TRACKS + SALSA_TRACKS + CUMBIA_TRACKS).shuffled()
+                tracks = (URBAN_TRACKS + SALSA_TRACKS + CUMBIA_TRACKS).shuffled(),
+                coverUrl = "https://image-cdn-ak.spotifycdn.com/image/ab67706f000000031530b39927b056d87492f573"
             ),
             HomeChart(
-                id = "los_90_peru",
-                title = "Los 90s & Clásicos",
-                subtitle = "Nostalgia, rock en español y cumbias doradas",
-                emoji = "📻",
-                tracks = (ROCK_POP_TRACKS + CUMBIA_TRACKS).shuffled()
+                id = "top_50_mexico",
+                title = "Top 50 - México",
+                subtitle = "Las canciones más escuchadas en México hoy",
+                emoji = "🇲🇽",
+                tracks = (URBAN_TRACKS + CUMBIA_TRACKS).shuffled(),
+                coverUrl = "https://charts-images.scdn.co/assets/locale_en/regional/daily/region_mx_default.jpg"
+            ),
+            HomeChart(
+                id = "top_50_argentina",
+                title = "Top 50 - Argentina",
+                subtitle = "Las canciones más escuchadas en Argentina hoy",
+                emoji = "🇦🇷",
+                tracks = (ROCK_POP_TRACKS + URBAN_TRACKS).shuffled(),
+                coverUrl = "https://charts-images.scdn.co/assets/locale_en/regional/daily/region_ar_default.jpg"
             )
         )
 

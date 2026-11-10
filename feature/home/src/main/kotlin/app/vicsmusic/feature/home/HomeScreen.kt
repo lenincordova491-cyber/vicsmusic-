@@ -834,15 +834,24 @@ fun ChartDetailScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(88.dp)
+                                .size(96.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color.Black.copy(alpha = 0.25f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = chart.emoji,
-                                fontSize = 44.sp
-                            )
+                            if (!chart.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = chart.coverUrl,
+                                    contentDescription = chart.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Text(
+                                    text = chart.emoji,
+                                    fontSize = 44.sp
+                                )
+                            }
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
@@ -957,7 +966,7 @@ fun ChartDetailScreen(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 ArtworkImage(
-                    artworkUrl = track.artworkUrl,
+                    artworkUrl = track.artworkUrl ?: chart.coverUrl,
                     contentDescription = track.title,
                     size = 48.dp,
                     cornerRadius = 8.dp
@@ -1285,20 +1294,47 @@ private fun ChartCard(
 
     Card(
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
         modifier = modifier
             .width(156.dp)
             .height(180.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(gradientColors))
-                .padding(12.dp)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (!chart.coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = chart.coverUrl,
+                    contentDescription = chart.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.25f),
+                                    Color.Black.copy(alpha = 0.55f),
+                                    Color.Black.copy(alpha = 0.92f)
+                                )
+                            )
+                        )
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.verticalGradient(gradientColors))
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

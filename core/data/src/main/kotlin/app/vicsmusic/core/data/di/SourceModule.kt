@@ -71,6 +71,12 @@ object SourceModule {
 
     @Provides
     @Singleton
+    fun provideSpotifyChartsClient(httpClient: HttpClient): app.vicsmusic.core.network.SpotifyChartsClient {
+        return app.vicsmusic.core.network.SpotifyChartsClient(httpClient)
+    }
+
+    @Provides
+    @Singleton
     fun provideLrclibClient(httpClient: HttpClient): app.vicsmusic.core.network.LrclibClient {
         return app.vicsmusic.core.network.LrclibClient(httpClient)
     }

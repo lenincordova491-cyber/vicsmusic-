@@ -75,6 +75,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val declarativeExtensionManager: DeclarativeExtensionManager,
     private val innerTubeSessionManager: InnerTubeSessionManager,
     private val innerTubeClient: InnerTubeClient,
+    private val spotifyChartsClient: app.vicsmusic.core.network.SpotifyChartsClient = app.vicsmusic.core.network.SpotifyChartsClient(),
     @ApplicationContext private val context: Context,
     @app.vicsmusic.core.data.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MusicRepository {
@@ -273,32 +274,35 @@ class MusicRepositoryImpl @Inject constructor(
                     }
                 }
 
-                // Remote streaming from registered source
+                // Remote streaming from registered source or external charts
                 val cachedTrack = trackDao.getTrack(trackId).firstOrNull()
                 val sourceId = cachedTrack?.sourceId ?: resolveSourceId(trackId)
                 val source = sourceRegistry.getSource(sourceId)
-                    ?: throw IllegalStateException("Music source '$sourceId' not available for track $trackId")
 
-                val primaryResult = source.getStream(trackId, quality)
-                if (primaryResult.isSuccess) {
-                    return@runCatching primaryResult.getOrThrow()
+                if (source != null) {
+                    val primaryResult = source.getStream(trackId, quality)
+                    if (primaryResult.isSuccess) {
+                        return@runCatching primaryResult.getOrThrow()
+                    }
                 }
 
-                // Self-healing fallback: if a remote track ID is stale or region-blocked,
-                // resolve by title + artist on YouTube Music and stream the first playable match.
+                // Self-healing fallback: if track is from an external source (Spotify, charts)
+                // or the primary source failed/is unavailable, resolve by title + artist on YouTube Music!
                 if (sourceId != "local" && cachedTrack != null && cachedTrack.title.isNotBlank()) {
                     val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID) ?: source
-                    val query = "${cachedTrack.title} ${cachedTrack.artistName}".trim()
-                    val candidates = ytSource.search(query, SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
-                    for (candidate in candidates.take(3)) {
-                        val fallbackStream = ytSource.getStream(candidate.id, quality).getOrNull()
-                        if (fallbackStream != null) {
-                            return@runCatching fallbackStream.copy(trackId = trackId)
+                    if (ytSource != null) {
+                        val query = "${cachedTrack.title} ${cachedTrack.artistName}".trim()
+                        val candidates = ytSource.search(query, SearchType.TRACKS, 1).getOrNull()?.items.orEmpty()
+                        for (candidate in candidates.take(3)) {
+                            val fallbackStream = ytSource.getStream(candidate.id, quality).getOrNull()
+                            if (fallbackStream != null) {
+                                return@runCatching fallbackStream.copy(trackId = trackId)
+                            }
                         }
                     }
                 }
 
-                primaryResult.getOrThrow()
+                throw IllegalStateException("Music stream not available for track $trackId (source: $sourceId)")
             }
         }
 
@@ -566,6 +570,17 @@ class MusicRepositoryImpl @Inject constructor(
                 }
             }
         }
+
+    override suspend fun getTopCharts(): Result<List<app.vicsmusic.core.model.Chart>> = withContext(ioDispatcher) {
+        runCatching {
+            val charts = spotifyChartsClient.getLiveCharts()
+            val allTracks = charts.flatMap { it.tracks }
+            if (allTracks.isNotEmpty()) {
+                trackDao.upsertTracksPreservingHistory(allTracks.map { it.asEntity() })
+            }
+            charts
+        }
+    }
 
     override suspend fun seedCatalogTracks(tracks: List<Track>): Result<Unit> = withContext(ioDispatcher) {
         runCatching {

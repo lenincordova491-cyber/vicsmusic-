@@ -162,8 +162,80 @@ fun SearchScreen(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp, bottom = 12.dp)
+                .padding(top = 16.dp, bottom = 8.dp)
         )
+
+        // Barra de autocompletado en tiempo real (< 50 ms) mientras escribe el usuario
+        if (uiState.query.isNotBlank() && (uiState.liveSuggestions.isNotEmpty() || uiState.directSuggestedTracks.isNotEmpty())) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                items(
+                    items = uiState.directSuggestedTracks,
+                    key = { "dir_sug_${it.id}" }
+                ) { directTrack ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2A22)),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.clickable { onTrackClick(directTrack) }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            ArtworkImage(
+                                artworkUrl = directTrack.artworkUrl,
+                                contentDescription = directTrack.title,
+                                size = 22.dp,
+                                cornerRadius = 4.dp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${directTrack.title} • ${directTrack.artistName}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = SpotifyGreen,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                items(
+                    items = uiState.liveSuggestions,
+                    key = { "txt_sug_$it" }
+                ) { suggestion ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF242424)),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.clickable { onQueryChange(suggestion) }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = SpotifyGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = suggestion,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         // Quick Filter Chips Row (Todo, Canciones, Playlists, Artistas, Álbumes, Podcasts)
         val quickFilters = listOf(
@@ -507,7 +579,7 @@ fun SearchScreen(
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
                     // 1. Mejor Resultado
-                    val top = uiState.filteredResults.firstOrNull()
+                    val top = uiState.topResultTrack ?: uiState.filteredResults.firstOrNull()
                     if (top != null) {
                         item(key = "top_result_header") {
                             Text(

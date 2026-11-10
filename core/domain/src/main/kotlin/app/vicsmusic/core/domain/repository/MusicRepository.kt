@@ -14,6 +14,15 @@ interface MusicRepository {
     fun getDownloadedTracks(): Flow<List<Track>>
     fun getPlayHistory(limit: Int = 100): Flow<List<app.vicsmusic.core.domain.engine.ListeningEvent>>
     suspend fun searchTracks(query: String): Result<List<Track>>
+    suspend fun getSearchSuggestions(partialQuery: String): Result<app.vicsmusic.core.model.SearchSuggestions> =
+        Result.success(app.vicsmusic.core.model.SearchSuggestions())
+    suspend fun searchFullCatalog(query: String): Result<app.vicsmusic.core.model.FullSearchResults> =
+        searchTracks(query).map { tracks ->
+            app.vicsmusic.core.model.FullSearchResults(
+                topResultTrack = tracks.firstOrNull(),
+                tracks = tracks
+            )
+        }
     suspend fun getStreamInfo(trackId: String, quality: AudioQuality): Result<StreamInfo>
     suspend fun toggleLike(trackId: String): Result<Boolean>
     suspend fun toggleTrackLike(track: Track): Result<Boolean>

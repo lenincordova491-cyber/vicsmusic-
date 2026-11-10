@@ -35,10 +35,15 @@ data class SearchUiState(
     val query: String = "",
     val filter: SearchFilter = SearchFilter.ALL,
     val isSearching: Boolean = false,
+    val topResultTrack: Track? = null,
+    val topResultArtist: Artist? = null,
     val results: List<Track> = emptyList(),
     val filteredResults: List<Track> = emptyList(),
     val matchingPlaylists: List<Playlist> = emptyList(),
     val matchingArtists: List<Artist> = emptyList(),
+    val liveSuggestions: List<String> = emptyList(),
+    val directSuggestedTracks: List<Track> = emptyList(),
+    val directSuggestedArtists: List<Artist> = emptyList(),
     val recentSearches: List<String> = emptyList(),
     val suggestedSearches: List<String> = listOf("Canserbero", "Ke Personajes", "Viva Latino", "Top 50 Perú", "Agua Marina", "Grupo 5", "Rock en Español"),
     val catalogExtensions: List<ExtensionItem> = emptyList(),
@@ -87,9 +92,39 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun observeQuery() {
+        // 1. Autocompletado en tiempo real (< 50 ms) mientras el usuario escribe
         viewModelScope.launch {
             queryFlow
-                .debounce(300)
+                .debounce(45)
+                .distinctUntilChanged()
+                .collectLatest { query ->
+                    val trimmed = query.trim()
+                    if (trimmed.isEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                liveSuggestions = emptyList(),
+                                directSuggestedTracks = emptyList(),
+                                directSuggestedArtists = emptyList()
+                            )
+                        }
+                    } else {
+                        musicRepository.getSearchSuggestions(trimmed).onSuccess { suggestions ->
+                            _uiState.update {
+                                it.copy(
+                                    liveSuggestions = suggestions.textSuggestions,
+                                    directSuggestedTracks = suggestions.directTracks,
+                                    directSuggestedArtists = suggestions.directArtists
+                                )
+                            }
+                        }
+                    }
+                }
+        }
+
+        // 2. Búsqueda multidimensional completa (Mejor Resultado + Canciones + Artistas + Playlists reales)
+        viewModelScope.launch {
+            queryFlow
+                .debounce(280)
                 .distinctUntilChanged()
                 .collectLatest { query ->
                     performSearch(query)
@@ -133,8 +168,15 @@ class SearchViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     isSearching = false,
+                    topResultTrack = null,
+                    topResultArtist = null,
                     results = emptyList(),
                     filteredResults = emptyList(),
+                    matchingArtists = emptyList(),
+                    matchingPlaylists = emptyList(),
+                    liveSuggestions = emptyList(),
+                    directSuggestedTracks = emptyList(),
+                    directSuggestedArtists = emptyList(),
                     errorMessage = null
                 )
             }
@@ -142,52 +184,20 @@ class SearchViewModel @Inject constructor(
         }
 
         _uiState.update { it.copy(isSearching = true, errorMessage = null) }
-        val result = searchTracksUseCase(trimmed)
+        val result = musicRepository.searchFullCatalog(trimmed)
         result.fold(
-            onSuccess = { tracks ->
-                val artists = tracks.map { it.artistName }.distinct().take(6).map { name ->
-                    Artist(
-                        id = name.lowercase().replace(" ", "_"),
-                        sourceId = "ytmusic",
-                        name = name,
-                        imageUrl = tracks.firstOrNull { it.artistName == name }?.artworkUrl,
-                        topTracks = tracks.filter { it.artistName == name }
-                    )
-                }
-                val playlists = if (tracks.isNotEmpty()) {
-                    listOf(
-                        Playlist(
-                            id = "pl_this_is_${trimmed.lowercase().replace(" ", "_")}",
-                            title = "This Is ${trimmed.replaceFirstChar { it.uppercase() }}",
-                            description = "Los temas esenciales y más reproducidos reunidos para ti",
-                            artworkUrl = tracks.firstOrNull()?.artworkUrl,
-                            trackCount = tracks.size
-                        ),
-                        Playlist(
-                            id = "pl_hits_${trimmed.lowercase().replace(" ", "_")}",
-                            title = "${trimmed.replaceFirstChar { it.uppercase() }} Hits 2026",
-                            description = "Grandes éxitos y los favoritos del momento",
-                            artworkUrl = tracks.getOrNull(1)?.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
-                            trackCount = tracks.size
-                        ),
-                        Playlist(
-                            id = "pl_radio_${trimmed.lowercase().replace(" ", "_")}",
-                            title = "Radio de ${trimmed.replaceFirstChar { it.uppercase() }}",
-                            description = "Música continua y sugerencias basadas en tu búsqueda",
-                            artworkUrl = tracks.getOrNull(2)?.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
-                            trackCount = tracks.size
-                        )
-                    )
-                } else emptyList()
-
+            onSuccess = { fullResults ->
+                val tracks = fullResults.tracks
                 _uiState.update { current ->
                     val filtered = filterTracks(tracks, current.filter)
                     current.copy(
                         isSearching = false,
+                        topResultTrack = fullResults.topResultTrack ?: filtered.firstOrNull(),
+                        topResultArtist = fullResults.topResultArtist,
                         results = tracks,
                         filteredResults = filtered,
-                        matchingArtists = artists,
-                        matchingPlaylists = playlists,
+                        matchingArtists = fullResults.artists,
+                        matchingPlaylists = fullResults.playlists,
                         errorMessage = null
                     )
                 }

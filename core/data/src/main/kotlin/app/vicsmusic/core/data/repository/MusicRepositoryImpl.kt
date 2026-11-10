@@ -76,6 +76,12 @@ class MusicRepositoryImpl @Inject constructor(
     private val innerTubeSessionManager: InnerTubeSessionManager,
     private val innerTubeClient: InnerTubeClient,
     private val spotifyChartsClient: app.vicsmusic.core.network.SpotifyChartsClient = app.vicsmusic.core.network.SpotifyChartsClient(),
+    private val innerTubeSmartSearch: app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio =
+        app.vicsmusic.source.remote.innertube.InnerTubeSmartSearchAndRadio(
+            innerTubeClient = innerTubeClient,
+            httpClient = app.vicsmusic.core.network.VicsHttpClientFactory.create(),
+            sessionManager = innerTubeSessionManager
+        ),
     @ApplicationContext private val context: Context,
     @app.vicsmusic.core.data.di.IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MusicRepository {
@@ -255,6 +261,130 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
     }
+
+    override suspend fun getSearchSuggestions(partialQuery: String): Result<app.vicsmusic.core.model.SearchSuggestions> =
+        withContext(ioDispatcher) {
+            runCatching {
+                val clean = partialQuery.trim()
+                if (clean.isEmpty()) {
+                    return@runCatching app.vicsmusic.core.model.SearchSuggestions()
+                }
+                val instant = innerTubeSmartSearch.getInstantSuggestions(clean)
+                if (instant.directTracks.isNotEmpty()) {
+                    upsertTracksPreservingUserState(instant.directTracks)
+                }
+                app.vicsmusic.core.model.SearchSuggestions(
+                    textSuggestions = instant.textSuggestions,
+                    directTracks = instant.directTracks,
+                    directArtists = instant.directArtists
+                )
+            }
+        }
+
+    override suspend fun searchFullCatalog(query: String): Result<app.vicsmusic.core.model.FullSearchResults> =
+        withContext(ioDispatcher) {
+            runCatching {
+                val clean = query.trim()
+                if (clean.isEmpty()) {
+                    return@runCatching app.vicsmusic.core.model.FullSearchResults()
+                }
+
+                val (innerTubeFull, hybridTracks) = coroutineScope {
+                    val fullDeferred = async {
+                        withTimeoutOrNull(6_500L) {
+                            innerTubeSmartSearch.searchFullCatalog(clean).getOrNull()
+                        }
+                    }
+                    val tracksDeferred = async {
+                        searchTracks(clean).getOrDefault(emptyList())
+                    }
+                    Pair(fullDeferred.await(), tracksDeferred.await())
+                }
+
+                val combinedCandidates = buildList {
+                    innerTubeFull?.topResultTrack?.let { add(it) }
+                    innerTubeFull?.songs?.let { addAll(it) }
+                    addAll(hybridTracks)
+                }.distinctBy { it.id }
+
+                if (combinedCandidates.isNotEmpty()) {
+                    upsertTracksPreservingUserState(combinedCandidates)
+                }
+
+                val allCatalogOnline = trackDao.getAllTracks().firstOrNull()?.map { it.asExternalModel() }.orEmpty()
+                val preferredArtists = allCatalogOnline
+                    .filter { it.isLiked || it.playCount > 0 }
+                    .map { it.artistName }
+                    .toSet()
+
+                val smartRanking = advancedSearchEngine.analyzeAndRankSearch(
+                    rawQuery = clean,
+                    candidates = combinedCandidates,
+                    preferredArtists = preferredArtists
+                )
+
+                val finalTracks = smartRanking.rankedTracks
+                val bestTopTrack = innerTubeFull?.topResultTrack ?: smartRanking.topResult ?: finalTracks.firstOrNull()
+
+                val realArtists = innerTubeFull?.artists.orEmpty().map { artist ->
+                    val artistTracks = finalTracks.filter {
+                        it.artistName.contains(artist.name, ignoreCase = true) ||
+                            artist.name.contains(it.artistName, ignoreCase = true)
+                    }
+                    artist.copy(
+                        imageUrl = artist.imageUrl ?: artistTracks.firstOrNull()?.artworkUrl,
+                        topTracks = artistTracks.ifEmpty { finalTracks.take(5) }
+                    )
+                }
+
+                val fallbackArtists = if (realArtists.isEmpty()) {
+                    smartRanking.matchedArtists.take(6).map { name ->
+                        val artistTracks = finalTracks.filter { it.artistName.equals(name, ignoreCase = true) }
+                        app.vicsmusic.core.model.Artist(
+                            id = "art_${name.lowercase().replace(" ", "_")}",
+                            sourceId = "ytmusic",
+                            name = name,
+                            imageUrl = artistTracks.firstOrNull()?.artworkUrl,
+                            topTracks = artistTracks
+                        )
+                    }
+                } else {
+                    realArtists
+                }
+
+                val realPlaylists = innerTubeFull?.playlists.orEmpty()
+                val finalPlaylists = if (realPlaylists.isNotEmpty()) {
+                    realPlaylists
+                } else if (finalTracks.isNotEmpty()) {
+                    listOf(
+                        app.vicsmusic.core.model.Playlist(
+                            id = "pl_this_is_${clean.lowercase().replace(" ", "_")}",
+                            title = "This Is ${clean.replaceFirstChar { it.uppercase() }}",
+                            description = "Los temas esenciales y más reproducidos en YouTube Music",
+                            artworkUrl = bestTopTrack?.artworkUrl ?: finalTracks.firstOrNull()?.artworkUrl,
+                            trackCount = finalTracks.size
+                        ),
+                        app.vicsmusic.core.model.Playlist(
+                            id = "pl_radio_${clean.lowercase().replace(" ", "_")}",
+                            title = "Radio de ${clean.replaceFirstChar { it.uppercase() }}",
+                            description = "Mix continuo RDAMVM adaptado a tu búsqueda",
+                            artworkUrl = finalTracks.getOrNull(1)?.artworkUrl ?: finalTracks.firstOrNull()?.artworkUrl,
+                            trackCount = finalTracks.size
+                        )
+                    )
+                } else {
+                    emptyList()
+                }
+
+                app.vicsmusic.core.model.FullSearchResults(
+                    topResultTrack = bestTopTrack,
+                    topResultArtist = innerTubeFull?.topResultArtist ?: fallbackArtists.firstOrNull(),
+                    tracks = finalTracks,
+                    artists = fallbackArtists,
+                    playlists = finalPlaylists
+                )
+            }
+        }
 
     override suspend fun getStreamInfo(trackId: String, quality: AudioQuality): Result<StreamInfo> =
         withContext(ioDispatcher) {
@@ -709,16 +839,32 @@ class MusicRepositoryImpl @Inject constructor(
         excludedTrackIds: Set<String>
     ): Result<List<Track>> = withContext(ioDispatcher) {
         runCatching {
-            val rawVideoId = seedTrack.id.removePrefix(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)
-            val response = innerTubeClient.nextQueue(
-                videoId = rawVideoId,
-                playlistId = "RDAMVM$rawVideoId"
-            )
-            val rawTracks = InnerTubeParser.parseNextQueueTracks(response)
-                .map { it.toDomainTrack() }
+            val effectiveSeed = if (seedTrack.id.startsWith(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)) {
+                seedTrack
+            } else {
+                val ytSource = sourceRegistry.getSource(app.vicsmusic.source.remote.YouTubeMusicSource.SOURCE_ID)
+                val query = "${seedTrack.title} ${seedTrack.artistName}".trim()
+                ytSource?.search(query, SearchType.TRACKS, 1)?.getOrNull()?.items?.firstOrNull() ?: seedTrack
+            }
+
+            val smartTracks = innerTubeSmartSearch.fetchContinuousSmartRadio(
+                seedTrack = effectiveSeed,
+                excludedTrackIds = excludedTrackIds
+            ).getOrNull().orEmpty()
+
+            val rawTracks = if (smartTracks.isNotEmpty()) {
+                smartTracks
+            } else {
+                val rawVideoId = effectiveSeed.id.removePrefix(app.vicsmusic.source.remote.YouTubeMusicSource.TRACK_PREFIX)
+                val response = innerTubeClient.nextQueue(
+                    videoId = rawVideoId,
+                    playlistId = "RDAMVM$rawVideoId"
+                )
+                InnerTubeParser.parseNextQueueTracks(response).map { it.toDomainTrack() }
+            }
 
             val filtered = rawTracks
-                .filter { it.id != seedTrack.id && !excludedTrackIds.contains(it.id) }
+                .filter { it.id != seedTrack.id && it.id != effectiveSeed.id && !excludedTrackIds.contains(it.id) }
                 .distinctBy { it.id }
 
             if (filtered.isNotEmpty()) {

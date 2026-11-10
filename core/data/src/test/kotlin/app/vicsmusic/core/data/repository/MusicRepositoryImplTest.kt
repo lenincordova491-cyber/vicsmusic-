@@ -29,6 +29,7 @@ import org.robolectric.RobolectricTestRunner
 class MusicRepositoryImplTest {
 
     private val trackDao: TrackDao = mockk(relaxed = true)
+    private val playlistDao: app.vicsmusic.core.database.dao.PlaylistDao = mockk(relaxed = true)
     private val downloadDao: app.vicsmusic.core.database.dao.DownloadDao = mockk(relaxed = true)
     private val lyricsDao: app.vicsmusic.core.database.dao.LyricsDao = mockk(relaxed = true)
     private val playHistoryDao: app.vicsmusic.core.database.dao.PlayHistoryDao = mockk(relaxed = true)
@@ -47,6 +48,7 @@ class MusicRepositoryImplTest {
     fun setup() {
         repository = MusicRepositoryImpl(
             trackDao = trackDao,
+            playlistDao = playlistDao,
             downloadDao = downloadDao,
             lyricsDao = lyricsDao,
             playHistoryDao = playHistoryDao,

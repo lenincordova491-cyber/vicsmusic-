@@ -29,6 +29,8 @@ interface MusicRepository {
     suspend fun syncLocalTracks(): Result<Int>
     suspend fun getLyrics(track: Track): Result<Lyrics?>
     suspend fun getCanvasVideoUrl(track: Track): Result<String?> = Result.success(null)
+    suspend fun importPlaylistFromUrl(url: String): Result<app.vicsmusic.core.model.Playlist> =
+        Result.failure(UnsupportedOperationException())
     suspend fun downloadTrack(track: Track, onProgress: (Float) -> Unit = {}): Result<String>
     suspend fun deleteDownloadedTrack(trackId: String): Result<Unit>
     suspend fun recordPlayHistory(trackId: String, completionPercentage: Float)

@@ -23,8 +23,10 @@ data class AudioDspState(
     val selectedPresetIndex: Int = 0,
     val bands: List<EqualizerBand> = emptyList(),
     val bassBoostStrength: Short = 0, // 0..1000
-    val loudnessNormalizationEnabled: Boolean = false,
-    val targetGainMb: Int = 600 // +6 dB
+    val loudnessNormalizationEnabled: Boolean = true, // Activada por defecto para volumen uniforme
+    val targetGainMb: Int = 500, // +5 dB (normalización estándar -14 LUFS)
+    val autoEqProfiles: List<AutoEqProfile> = AutoEqPresets.PROFILES,
+    val selectedAutoEqProfileId: String? = null
 )
 
 @Singleton
@@ -95,6 +97,46 @@ class AudioEffectsProcessor @Inject constructor() {
             if (enabled) setTargetGain(_state.value.targetGainMb)
         }
         _state.value = _state.value.copy(loudnessNormalizationEnabled = enabled)
+    }
+
+    /**
+     * Aplica la calibración de auriculares AutoEQ ajustando las ganancias
+     * relativas en cada banda del ecualizador.
+     */
+    fun applyAutoEqProfile(profileId: String) {
+        val profile = AutoEqPresets.PROFILES.firstOrNull { it.id == profileId } ?: return
+        val eq = equalizer ?: return
+
+        setEqualizerEnabled(true)
+        val numBands = eq.numberOfBands.toInt()
+        val range = eq.bandLevelRange
+        val minLevel = range[0]
+        val maxLevel = range[1]
+
+        val updatedBands = mutableListOf<EqualizerBand>()
+        for (i in 0 until numBands) {
+            val bandIdx = i.toShort()
+            val gainIdx = (i * profile.gainsMb.size) / numBands.coerceAtLeast(1)
+            val desiredGain = profile.gainsMb.getOrElse(gainIdx) { 0.toShort() }
+            val clampLevel = desiredGain.coerceIn(minLevel, maxLevel)
+
+            eq.setBandLevel(bandIdx, clampLevel)
+            updatedBands.add(
+                EqualizerBand(
+                    index = bandIdx,
+                    centerFreqHz = eq.getCenterFreq(bandIdx) / 1000,
+                    currentLevelMb = clampLevel,
+                    minLevelMb = minLevel,
+                    maxLevelMb = maxLevel
+                )
+            )
+        }
+
+        _state.value = _state.value.copy(
+            isEqualizerEnabled = true,
+            selectedAutoEqProfileId = profileId,
+            bands = updatedBands
+        )
     }
 
     fun release() {

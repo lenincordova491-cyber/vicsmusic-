@@ -250,6 +250,30 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             .build()
+
+        // Sincronización continua de estado con Widgets y Android Auto
+        serviceScope.launch {
+            playerManager.playbackState.collect { state ->
+                val track = state.currentTrack
+                val intent = Intent(ACTION_PLAYBACK_STATE_CHANGED).apply {
+                    putExtra("title", track?.title ?: "Vicsmusic")
+                    putExtra("artist", track?.artistName ?: "Toca para reproducir")
+                    putExtra("isPlaying", state.isPlaying)
+                    putExtra("artworkUrl", track?.artworkUrl)
+                    setPackage(packageName)
+                }
+                sendBroadcast(intent)
+            }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_WIDGET_PLAY_PAUSE -> playerManager.togglePlayPause()
+            ACTION_WIDGET_NEXT -> playerManager.playNext()
+            ACTION_WIDGET_PREV -> playerManager.playPrevious()
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -313,5 +337,10 @@ class PlaybackService : MediaLibraryService() {
 
         const val ACTION_TOGGLE_SHUFFLE = "app.vicsmusic.ACTION_TOGGLE_SHUFFLE"
         const val ACTION_TOGGLE_REPEAT = "app.vicsmusic.ACTION_TOGGLE_REPEAT"
+
+        const val ACTION_PLAYBACK_STATE_CHANGED = "app.vicsmusic.ACTION_PLAYBACK_STATE_CHANGED"
+        const val ACTION_WIDGET_PLAY_PAUSE = "app.vicsmusic.ACTION_WIDGET_PLAY_PAUSE"
+        const val ACTION_WIDGET_NEXT = "app.vicsmusic.ACTION_WIDGET_NEXT"
+        const val ACTION_WIDGET_PREV = "app.vicsmusic.ACTION_WIDGET_PREV"
     }
 }

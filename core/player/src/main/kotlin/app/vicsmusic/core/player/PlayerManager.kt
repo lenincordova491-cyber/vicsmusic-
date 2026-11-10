@@ -50,7 +50,8 @@ class PlayerManager @Inject constructor(
     private val musicRepository: MusicRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val playerCacheManager: PlayerCacheManager,
-    private val sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager
+    private val sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager,
+    val audioEffectsProcessor: app.vicsmusic.core.player.dsp.AudioEffectsProcessor
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
@@ -149,6 +150,7 @@ class PlayerManager @Inject constructor(
                     .build()
                 repeatMode = Player.REPEAT_MODE_OFF
                 addListener(playerListener)
+                audioEffectsProcessor.attachToAudioSession(audioSessionId)
             }
     }
 
@@ -158,6 +160,10 @@ class PlayerManager @Inject constructor(
     private var consecutiveErrorCount = 0
 
     private val playerListener = object : Player.Listener {
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            audioEffectsProcessor.attachToAudioSession(audioSessionId)
+        }
+
         override fun onPlaybackStateChanged(state: Int) {
             updatePlaybackState()
             when (state) {

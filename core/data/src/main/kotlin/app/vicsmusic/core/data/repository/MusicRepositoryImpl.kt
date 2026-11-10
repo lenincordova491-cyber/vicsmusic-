@@ -14,6 +14,7 @@ import java.net.URL
 import app.vicsmusic.core.database.dao.DownloadDao
 import app.vicsmusic.core.database.dao.LyricsDao
 import app.vicsmusic.core.database.dao.PlayHistoryDao
+import app.vicsmusic.core.database.dao.PlaylistDao
 import app.vicsmusic.core.database.dao.SearchHistoryDao
 import app.vicsmusic.core.database.dao.TrackDao
 import app.vicsmusic.core.database.entity.DownloadEntity
@@ -65,6 +66,7 @@ import javax.inject.Singleton
 @Singleton
 class MusicRepositoryImpl @Inject constructor(
     private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
     private val downloadDao: DownloadDao,
     private val lyricsDao: LyricsDao,
     private val playHistoryDao: PlayHistoryDao,
@@ -133,6 +135,11 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     private val advancedSearchEngine = AdvancedSearchEngine()
+    private val playlistImporter = app.vicsmusic.core.data.importer.PlaylistImporter(
+        playlistDao = playlistDao,
+        trackDao = trackDao,
+        innerTubeClient = innerTubeClient
+    )
 
     private suspend fun upsertTracksPreservingUserState(tracks: List<Track>) {
         if (tracks.isEmpty()) return
@@ -712,6 +719,17 @@ class MusicRepositoryImpl @Inject constructor(
             }
 
             null
+        }
+    }
+
+    override suspend fun importPlaylistFromUrl(url: String): Result<app.vicsmusic.core.model.Playlist> = withContext(ioDispatcher) {
+        playlistImporter.importPlaylist(url).map { imported ->
+            app.vicsmusic.core.model.Playlist(
+                id = imported.playlistId,
+                title = imported.title,
+                artworkUrl = imported.artworkUrl,
+                trackCount = imported.trackCount
+            )
         }
     }
 

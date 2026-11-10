@@ -47,6 +47,22 @@
         <meta-data
             android:name="androidx.car.app.minCarApiLevel"
             android:value="1" />
+
+        <!-- Widget de escritorio Material You -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="app.vicsmusic.ACTION_PLAYBACK_STATE_CHANGED" />
+                <action android:name="app.vicsmusic.widget.ACTION_PLAY_PAUSE" />
+                <action android:name="app.vicsmusic.widget.ACTION_NEXT" />
+                <action android:name="app.vicsmusic.widget.ACTION_PREV" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

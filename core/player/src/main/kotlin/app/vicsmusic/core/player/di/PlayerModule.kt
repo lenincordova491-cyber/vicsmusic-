@@ -43,7 +43,8 @@ object PlayerModule {
         musicRepository: MusicRepository,
         userPreferencesRepository: UserPreferencesRepository,
         playerCacheManager: PlayerCacheManager,
-        sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager
+        sponsorBlockManager: app.vicsmusic.core.player.sponsorblock.SponsorBlockManager,
+        audioEffectsProcessor: app.vicsmusic.core.player.dsp.AudioEffectsProcessor
     ): PlayerManager {
         return PlayerManager(
             context = context,
@@ -51,7 +52,8 @@ object PlayerModule {
             musicRepository = musicRepository,
             userPreferencesRepository = userPreferencesRepository,
             playerCacheManager = playerCacheManager,
-            sponsorBlockManager = sponsorBlockManager
+            sponsorBlockManager = sponsorBlockManager,
+            audioEffectsProcessor = audioEffectsProcessor
         )
     }
 

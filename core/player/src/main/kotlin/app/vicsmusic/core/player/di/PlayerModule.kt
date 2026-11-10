@@ -59,10 +59,20 @@ object PlayerModule {
 
     @Provides
     @Singleton
+    fun provideSleepTimerManager(
+        playerManager: PlayerManager
+    ): app.vicsmusic.core.player.sleeptimer.SleepTimerManager {
+        return app.vicsmusic.core.player.sleeptimer.SleepTimerManager(playerManager)
+    }
+
+    @Provides
+    @Singleton
     fun providePlaybackConnection(
         @ApplicationContext context: Context,
-        playerManager: PlayerManager
+        playerManager: PlayerManager,
+        sleepTimerManager: app.vicsmusic.core.player.sleeptimer.SleepTimerManager,
+        audioEffectsProcessor: app.vicsmusic.core.player.dsp.AudioEffectsProcessor
     ): PlaybackConnection {
-        return PlaybackConnection(context, playerManager)
+        return PlaybackConnection(context, playerManager, sleepTimerManager, audioEffectsProcessor)
     }
 }

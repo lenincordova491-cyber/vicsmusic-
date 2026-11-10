@@ -22,10 +22,15 @@ import javax.inject.Singleton
 @Singleton
 class PlaybackConnection @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val playerManager: PlayerManager
+    private val playerManager: PlayerManager,
+    val sleepTimerManager: app.vicsmusic.core.player.sleeptimer.SleepTimerManager,
+    val audioEffectsProcessor: app.vicsmusic.core.player.dsp.AudioEffectsProcessor
 ) {
     val playbackState: StateFlow<PlaybackState> = playerManager.playbackState
     val queueState: StateFlow<QueueState> = playerManager.queueManager.state
+    val playbackSpeed: StateFlow<Float> = playerManager.playbackSpeed
+    val sleepTimerState: StateFlow<app.vicsmusic.core.player.sleeptimer.SleepTimerState> = sleepTimerManager.state
+    val audioDspState: StateFlow<app.vicsmusic.core.player.dsp.AudioDspState> = audioEffectsProcessor.state
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     var mediaController: MediaController? = null
@@ -110,7 +115,35 @@ class PlaybackConnection @Inject constructor(
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
-        playerManager.queueManager.moveItem(fromIndex, toIndex)
+        playerManager.moveQueueItem(fromIndex, toIndex)
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        playerManager.setPlaybackSpeed(speed)
+    }
+
+    fun startSleepTimer(option: app.vicsmusic.core.player.sleeptimer.SleepTimerOption) {
+        sleepTimerManager.startTimer(option)
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerManager.cancelTimer()
+    }
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        audioEffectsProcessor.setEqualizerEnabled(enabled)
+    }
+
+    fun setBandLevel(bandIndex: Short, levelMb: Short) {
+        audioEffectsProcessor.setBandLevel(bandIndex, levelMb)
+    }
+
+    fun setBassBoost(strength: Short) {
+        audioEffectsProcessor.setBassBoost(strength)
+    }
+
+    fun applyAutoEqProfile(profileId: String) {
+        audioEffectsProcessor.applyAutoEqProfile(profileId)
     }
 
     fun clearQueue() {

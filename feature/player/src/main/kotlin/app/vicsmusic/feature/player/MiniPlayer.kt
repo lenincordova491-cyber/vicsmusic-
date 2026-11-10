@@ -51,6 +51,7 @@ fun MiniPlayer(
     playbackState: PlaybackState,
     onPlayPauseClick: () -> Unit,
     onSkipNextClick: () -> Unit,
+    onSkipPreviousClick: () -> Unit = {},
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -78,7 +79,11 @@ fun MiniPlayer(
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            if (dragOffset < -100f) onSkipNextClick()
+                            if (dragOffset < -90f) {
+                                onSkipNextClick()
+                            } else if (dragOffset > 90f) {
+                                onSkipPreviousClick()
+                            }
                             dragOffset = 0f
                         },
                         onHorizontalDrag = { _, dragAmount ->

@@ -38,15 +38,21 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FileDownloadDone
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Tune
+import android.content.Intent
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -83,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.vicsmusic.core.model.Lyrics
@@ -110,6 +117,9 @@ fun NowPlayingRoute(
     val similarTracks by viewModel.similarTracks.collectAsStateWithLifecycle()
     val downloadedTrackIds by viewModel.downloadedTrackIds.collectAsStateWithLifecycle()
     val downloadingTrackId by viewModel.downloadingTrackId.collectAsStateWithLifecycle()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
+    val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
+    val audioDspState by viewModel.audioDspState.collectAsStateWithLifecycle()
 
     val currentTrack = playbackState.currentTrack
     val isDownloaded = currentTrack?.id != null && downloadedTrackIds.contains(currentTrack.id)
@@ -122,6 +132,9 @@ fun NowPlayingRoute(
         canvasVideoUrl = canvasVideoUrl,
         artistTracks = artistTracks,
         similarTracks = similarTracks,
+        playbackSpeed = playbackSpeed,
+        sleepTimerState = sleepTimerState,
+        audioDspState = audioDspState,
         onDismiss = onDismiss,
         onPlayPauseClick = viewModel::togglePlayPause,
         onSkipNextClick = viewModel::skipNext,
@@ -135,6 +148,14 @@ fun NowPlayingRoute(
         isDownloading = isDownloading,
         onPlayQueueIndex = viewModel::playTrackAtIndex,
         onRemoveQueueItem = viewModel::removeQueueItem,
+        onMoveQueueItem = viewModel::moveQueueItem,
+        onSetPlaybackSpeed = viewModel::setPlaybackSpeed,
+        onStartSleepTimer = viewModel::startSleepTimer,
+        onCancelSleepTimer = viewModel::cancelSleepTimer,
+        onSetEqualizerEnabled = viewModel::setEqualizerEnabled,
+        onSetBandLevel = viewModel::setBandLevel,
+        onSetBassBoost = viewModel::setBassBoost,
+        onApplyAutoEqProfile = viewModel::applyAutoEqProfile,
         onTrackClick = viewModel::playTrack,
         modifier = modifier
     )
@@ -149,6 +170,9 @@ fun NowPlayingScreen(
     canvasVideoUrl: String? = null,
     artistTracks: List<Track> = emptyList(),
     similarTracks: List<Track> = emptyList(),
+    playbackSpeed: Float = 1.0f,
+    sleepTimerState: app.vicsmusic.core.player.sleeptimer.SleepTimerState = app.vicsmusic.core.player.sleeptimer.SleepTimerState(),
+    audioDspState: app.vicsmusic.core.player.dsp.AudioDspState = app.vicsmusic.core.player.dsp.AudioDspState(),
     onDismiss: () -> Unit,
     onPlayPauseClick: () -> Unit,
     onSkipNextClick: () -> Unit,
@@ -162,6 +186,14 @@ fun NowPlayingScreen(
     isDownloading: Boolean = false,
     onPlayQueueIndex: (Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit = {},
+    onMoveQueueItem: (Int, Int) -> Unit = { _, _ -> },
+    onSetPlaybackSpeed: (Float) -> Unit = {},
+    onStartSleepTimer: (app.vicsmusic.core.player.sleeptimer.SleepTimerOption) -> Unit = {},
+    onCancelSleepTimer: () -> Unit = {},
+    onSetEqualizerEnabled: (Boolean) -> Unit = {},
+    onSetBandLevel: (Short, Short) -> Unit = { _, _ -> },
+    onSetBassBoost: (Short) -> Unit = {},
+    onApplyAutoEqProfile: (String) -> Unit = {},
     onTrackClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -173,6 +205,9 @@ fun NowPlayingScreen(
     var showTranslationSheet by remember { mutableStateOf(false) }
     var canvasDataMode by remember { mutableStateOf(CanvasPreferences.getMode(context)) }
     var showCanvasModeSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
+    var showEqualizerSheet by remember { mutableStateOf(false) }
+    var showSpeedSheet by remember { mutableStateOf(false) }
     val isCanvasAllowed = remember(canvasDataMode) {
         CanvasPreferences.shouldPlayCanvas(context, canvasDataMode)
     }
@@ -182,6 +217,9 @@ fun NowPlayingScreen(
             showFullScreenLyrics -> showFullScreenLyrics = false
             showTranslationSheet -> showTranslationSheet = false
             showCanvasModeSheet -> showCanvasModeSheet = false
+            showSleepTimerSheet -> showSleepTimerSheet = false
+            showEqualizerSheet -> showEqualizerSheet = false
+            showSpeedSheet -> showSpeedSheet = false
             showQueueSheet -> showQueueSheet = false
             else -> onDismiss()
         }
@@ -305,12 +343,93 @@ fun NowPlayingScreen(
                     )
                 }
 
-                IconButton(onClick = { showQueueSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.QueueMusic,
-                        contentDescription = stringResource(R.string.queue),
-                        tint = Color.White
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Sleep Timer
+                    IconButton(
+                        onClick = { showSleepTimerSheet = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = "Temporizador de apagado",
+                                tint = if (sleepTimerState.isActive) Color(0xFF1DB954) else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            if (sleepTimerState.isActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1DB954))
+                                )
+                            }
+                        }
+                    }
+
+                    // Equalizer & Audio DSP
+                    IconButton(
+                        onClick = { showEqualizerSheet = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Ecualizador y DSP",
+                            tint = if (audioDspState.isEqualizerEnabled || audioDspState.selectedAutoEqProfileId != null) Color(0xFF1DB954) else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Playback Speed
+                    IconButton(
+                        onClick = { showSpeedSheet = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text(
+                            text = if (playbackSpeed == 1.0f) "1x" else "${playbackSpeed}x",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (playbackSpeed != 1.0f) Color(0xFF1DB954) else Color.White
+                        )
+                    }
+
+                    // Share track
+                    if (track != null) {
+                        IconButton(
+                            onClick = {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    val cleanId = track.id.removePrefix("yt_").removePrefix("piped-music_")
+                                    val shareUrl = "https://music.youtube.com/watch?v=$cleanId"
+                                    val text = "🎵 Escuchando \"${track.title}\" de ${track.artistName} en Vicsmusic\n$shareUrl"
+                                    putExtra(Intent.EXTRA_SUBJECT, "${track.title} - ${track.artistName}")
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Compartir canción"))
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Compartir canción",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Queue
+                    IconButton(
+                        onClick = { showQueueSheet = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = stringResource(R.string.queue),
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
@@ -1330,16 +1449,44 @@ fun NowPlayingScreen(
                                     }
                             )
                             if (!isCurrent) {
-                                IconButton(
-                                    onClick = { onRemoveQueueItem(index) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Quitar de la cola",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (index > 0) {
+                                        IconButton(
+                                            onClick = { onMoveQueueItem(index, index - 1) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "Subir",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    if (index < queueState.items.size - 1) {
+                                        IconButton(
+                                            onClick = { onMoveQueueItem(index, index + 1) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "Bajar",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { onRemoveQueueItem(index) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Quitar de la cola",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1538,6 +1685,273 @@ fun NowPlayingScreen(
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sleep Timer Bottom Sheet
+    if (showSleepTimerSheet) {
+        val sleepSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showSleepTimerSheet = false },
+            sheetState = sleepSheetState,
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Temporizador de apagado",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                if (sleepTimerState.isActive) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Apagado en: ${sleepTimerState.formattedRemaining}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1DB954)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                app.vicsmusic.core.player.sleeptimer.SleepTimerOption.entries.forEach { option ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF282828)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                onStartSleepTimer(option)
+                                showSleepTimerSheet = false
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = option.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                if (sleepTimerState.isActive) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            onCancelSleepTimer()
+                            showSleepTimerSheet = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020)),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("Cancelar temporizador", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // Playback Speed Bottom Sheet
+    if (showSpeedSheet) {
+        val speedSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showSpeedSheet = false },
+            sheetState = speedSheetState,
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Velocidad de reproducción",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
+                    val isSelected = playbackSpeed == speed
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) Color(0xFF2E2E2E) else Color(0xFF181818)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                onSetPlaybackSpeed(speed)
+                                showSpeedSheet = false
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (speed == 1.0f) "1.0x (Normal)" else "${speed}x",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color(0xFF1DB954) else Color.White
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Seleccionado",
+                                    tint = Color(0xFF1DB954),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Equalizer & Audio DSP Bottom Sheet
+    if (showEqualizerSheet) {
+        val eqSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showEqualizerSheet = false },
+            sheetState = eqSheetState,
+            containerColor = Color(0xFF1E1E1E)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Ecualizador y DSP",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = audioDspState.isEqualizerEnabled,
+                        onCheckedChange = onSetEqualizerEnabled,
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color(0xFF1DB954)
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Perfiles AutoEQ Harman",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1DB954)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(audioDspState.autoEqProfiles) { profile ->
+                        val isSelected = audioDspState.selectedAutoEqProfileId == profile.id
+                        androidx.compose.material3.FilterChip(
+                            selected = isSelected,
+                            onClick = { onApplyAutoEqProfile(profile.id) },
+                            label = { Text(profile.name, fontSize = 12.sp) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF1DB954),
+                                selectedLabelColor = Color.Black,
+                                containerColor = Color(0xFF2E2E2E),
+                                labelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Bass Boost: ${audioDspState.bassBoostStrength / 10}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White
+                )
+                Slider(
+                    value = audioDspState.bassBoostStrength.toFloat(),
+                    onValueChange = { onSetBassBoost(it.toInt().toShort()) },
+                    valueRange = 0f..1000f,
+                    colors = androidx.compose.material3.SliderDefaults.colors(
+                        thumbColor = Color(0xFF1DB954),
+                        activeTrackColor = Color(0xFF1DB954)
+                    )
+                )
+
+                if (audioDspState.bands.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Bandas de frecuencia",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1DB954)
+                    )
+                    audioDspState.bands.forEach { band ->
+                        val freqLabel = if (band.centerFreqHz >= 1000) "${band.centerFreqHz / 1000} kHz" else "${band.centerFreqHz} Hz"
+                        val db = band.currentLevelMb / 100
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = freqLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White,
+                                modifier = Modifier.width(60.dp)
+                            )
+                            Slider(
+                                value = band.currentLevelMb.toFloat(),
+                                onValueChange = { onSetBandLevel(band.index, it.toInt().toShort()) },
+                                valueRange = band.minLevelMb.toFloat()..band.maxLevelMb.toFloat(),
+                                colors = androidx.compose.material3.SliderDefaults.colors(
+                                    thumbColor = Color(0xFF1DB954),
+                                    activeTrackColor = Color(0xFF1DB954)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = if (db > 0) "+$db dB" else "$db dB",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray,
+                                modifier = Modifier.width(45.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End
+                            )
                         }
                     }
                 }

@@ -52,6 +52,7 @@ class HomeViewModelTest {
         every { userPreferencesRepository.userPreferences } returns flowOf(UserPreferences())
         coEvery { musicRepository.getAvailableExtensions() } returns Result.success(emptyList())
         coEvery { musicRepository.searchTracks(any()) } returns Result.success(listOf(sampleTrack))
+        coEvery { musicRepository.getTopCharts() } returns Result.success(emptyList())
     }
 
     @After

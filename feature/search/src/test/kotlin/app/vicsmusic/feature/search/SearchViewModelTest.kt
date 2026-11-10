@@ -4,6 +4,8 @@ import app.vicsmusic.core.domain.repository.MusicRepository
 import app.vicsmusic.core.domain.usecase.SearchTracksUseCase
 import app.vicsmusic.core.model.ExtensionItem
 import app.vicsmusic.core.model.ExtensionRegistry
+import app.vicsmusic.core.model.FullSearchResults
+import app.vicsmusic.core.model.SearchSuggestions
 import app.vicsmusic.core.model.Track
 import app.vicsmusic.core.network.ExtensionRegistryClient
 import app.vicsmusic.core.player.PlaybackConnection
@@ -61,6 +63,9 @@ class SearchViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         every { musicRepository.getSearchHistory(any()) } returns flowOf(emptyList())
+        coEvery { musicRepository.getSearchSuggestions(any()) } returns Result.success(SearchSuggestions())
+        coEvery { musicRepository.searchFullCatalog(any()) } returns Result.success(FullSearchResults())
+        coEvery { searchTracksUseCase(any()) } returns Result.success(listOf(track1, track2))
         coEvery { extensionRegistryClient.fetchRegistry(any()) } returns Result.success(
             ExtensionRegistry(
                 version = 1,
@@ -94,7 +99,12 @@ class SearchViewModelTest {
 
     @Test
     fun `when query is typed, debounces and performs search`() = runTest(testDispatcher) {
-        coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1, track2))
+        coEvery { musicRepository.searchFullCatalog("Queen") } returns Result.success(
+            FullSearchResults(
+                topResultTrack = track1,
+                tracks = listOf(track1, track2)
+            )
+        )
 
         val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Queen")
@@ -110,7 +120,12 @@ class SearchViewModelTest {
 
     @Test
     fun `filter changes filter results accordingly`() = runTest(testDispatcher) {
-        coEvery { searchTracksUseCase("Bohemian") } returns Result.success(listOf(track1))
+        coEvery { musicRepository.searchFullCatalog("Bohemian") } returns Result.success(
+            FullSearchResults(
+                topResultTrack = track1,
+                tracks = listOf(track1)
+            )
+        )
 
         val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Bohemian")
@@ -127,7 +142,12 @@ class SearchViewModelTest {
 
     @Test
     fun `playTrack delegates to playbackConnection playQueue`() = runTest(testDispatcher) {
-        coEvery { searchTracksUseCase("Queen") } returns Result.success(listOf(track1))
+        coEvery { musicRepository.searchFullCatalog("Queen") } returns Result.success(
+            FullSearchResults(
+                topResultTrack = track1,
+                tracks = listOf(track1)
+            )
+        )
 
         val viewModel = SearchViewModel(searchTracksUseCase, playbackConnection, extensionRegistryClient, musicRepository)
         viewModel.onQueryChange("Queen")

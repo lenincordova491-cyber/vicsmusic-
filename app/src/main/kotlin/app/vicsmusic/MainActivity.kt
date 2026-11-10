@@ -162,6 +162,7 @@ fun VicsmusicAppRoot(
                                 playbackState = playbackState,
                                 onPlayPauseClick = viewModel::togglePlayPause,
                                 onSkipNextClick = viewModel::skipNext,
+                                onSkipPreviousClick = viewModel::skipPrevious,
                                 onClick = { isPlayerExpanded = true }
                             )
 

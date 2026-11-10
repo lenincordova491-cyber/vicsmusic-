@@ -149,6 +149,7 @@ class PlayerManager @Inject constructor(
                     .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
                     .build()
                 repeatMode = Player.REPEAT_MODE_OFF
+                skipSilenceEnabled = true
                 addListener(playerListener)
                 audioEffectsProcessor.attachToAudioSession(audioSessionId)
             }
@@ -156,6 +157,24 @@ class PlayerManager @Inject constructor(
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
+
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
+    fun setPlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.5f, 2.5f)
+        _playbackSpeed.value = clamped
+        _exoPlayer?.playbackParameters = PlaybackParameters(clamped)
+    }
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        queueManager.moveItem(fromIndex, toIndex)
+        _exoPlayer?.run {
+            if (fromIndex in 0 until mediaItemCount && toIndex in 0 until mediaItemCount) {
+                moveMediaItem(fromIndex, toIndex)
+            }
+        }
+    }
 
     private var consecutiveErrorCount = 0
 

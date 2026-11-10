@@ -49,6 +49,38 @@ class PlayerViewModel @Inject constructor(
             initialValue = playbackConnection.queueState.value
         )
 
+    val playbackSpeed: StateFlow<Float> = playbackConnection.playbackSpeed
+    val sleepTimerState: StateFlow<app.vicsmusic.core.player.sleeptimer.SleepTimerState> = playbackConnection.sleepTimerState
+    val audioDspState: StateFlow<app.vicsmusic.core.player.dsp.AudioDspState> = playbackConnection.audioDspState
+
+    fun setPlaybackSpeed(speed: Float) {
+        playbackConnection.setPlaybackSpeed(speed)
+    }
+
+    fun startSleepTimer(option: app.vicsmusic.core.player.sleeptimer.SleepTimerOption) {
+        playbackConnection.startSleepTimer(option)
+    }
+
+    fun cancelSleepTimer() {
+        playbackConnection.cancelSleepTimer()
+    }
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        playbackConnection.setEqualizerEnabled(enabled)
+    }
+
+    fun setBandLevel(bandIndex: Short, levelMb: Short) {
+        playbackConnection.setBandLevel(bandIndex, levelMb)
+    }
+
+    fun setBassBoost(strength: Short) {
+        playbackConnection.setBassBoost(strength)
+    }
+
+    fun applyAutoEqProfile(profileId: String) {
+        playbackConnection.applyAutoEqProfile(profileId)
+    }
+
     val downloadedTrackIds: StateFlow<Set<String>> = musicRepository.getDownloadedTracks()
         .map { tracks -> tracks.map { it.id }.toSet() }
         .stateIn(
